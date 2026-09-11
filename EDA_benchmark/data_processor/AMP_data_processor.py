@@ -53,13 +53,13 @@ class AMPDataProcessor(InMemoryDataset):
                 normalize=config['model'].get('pathlap_normalize', True))])
         super().__init__(root = self.save_folder, pre_transform = pre_transform)
         if mode == 'train':
-            self.data, self.slices = torch.load(self.processed_paths['train'])
+            self.data, self.slices = torch.load(self.processed_paths[f'train_{self.train_stage_num}'])
         elif mode == 'valid':
-            self.data, self.slices = torch.load(self.processed_paths['valid'])
+            self.data, self.slices = torch.load(self.processed_paths[f'valid_{self.train_stage_num}'])
         elif mode == 'test_id':
-            self.data, self.slices = torch.load(self.processed_paths['test'])
+            self.data, self.slices = torch.load(self.processed_paths[f'test_{self.train_stage_num}'])
         elif mode == 'test_ood':
-            self.data, self.slices = torch.load(self.processed_paths['ood'])
+            self.data, self.slices = torch.load(self.processed_paths[f'ood_{self.train_stage_num}'])
     @property
     def raw_file_names(self):
         return []
@@ -83,12 +83,17 @@ class AMPDataProcessor(InMemoryDataset):
     
     @property
     def processed_file_names(self):
-        return {
-            'train': 'train.pt',
-            'valid': 'valid.pt',
-            'test': 'test.pt',
-            'ood': 'ood.pt',
-        }
+        # Both train_stage_num=2 and train_stage_num=3 splits are cached side by side
+        # (same PE-processed graphs, just partitioned differently), so switching which
+        # stage is treated as in-distribution never requires recomputing PE features
+        # and both directions of stage generalization (2->3 and 3->2) stay available.
+        names = {}
+        for stage in (2, 3):
+            names[f'train_{stage}'] = f'train_stage{stage}.pt'
+            names[f'valid_{stage}'] = f'valid_stage{stage}.pt'
+            names[f'test_{stage}'] = f'test_stage{stage}.pt'
+            names[f'ood_{stage}'] = f'ood_stage{stage}.pt'
+        return names
     @property
     def processed_paths(self):
         return {mode: os.path.join(self.processed_dir, fname) for mode, fname in self.processed_file_names.items()}
@@ -102,41 +107,36 @@ class AMPDataProcessor(InMemoryDataset):
             print('all datasets already exists, directly load.')
             return
         else:
-            
+
             raw_data_path = self.config['task']['raw_data_path']
             graph_list, stage_2_indices, stage_3_indices = self.read_csv_graph_raw(raw_data_path)
-            if self.train_stage_num == 2:
-                iid_indices, ood_indices = stage_2_indices, stage_3_indices
-            else:
-                iid_indices, ood_indices = stage_3_indices, stage_2_indices
-            np.random.seed(123)
-            np.random.shuffle(iid_indices)
-            np.random.shuffle(ood_indices)
-            num_training = int(len(iid_indices) * 0.9)
-            num_validation = int(len(iid_indices) * 0.05)
-            num_test = int(len(iid_indices) * 0.05)
-            '''num_training = int(10000 * 0.9)
-            num_validation = int(10000 * 0.05)
-            num_test = int(10000 * 0.05)'''
-            num_test_ood = 500
 
-            '''indices__ = np.arange(10000)
-            train_indices = indices__[num_test + num_validation:]
-            valid_indices = indices__[num_test:num_test + num_validation]
-            test_indices = indices__[:num_test]'''
-            train_indices = iid_indices[:num_training]
-            valid_indices = iid_indices[num_training:num_training + num_validation]
-            test_indices = iid_indices[num_training + num_validation:]
-            test_ood_indices = ood_indices[:num_test_ood]
-            
-            train_data_list = []
-            val_data_list = []
-            test_data_list = []
-            test_ood_data_list = []
-            
+            # Build train/valid/test/ood index sets for BOTH choices of train_stage_num
+            # (which stage is in-distribution) so both directions of stage generalization
+            # (2->3 and 3->2) are cached from a single pass over the graphs.
+            splits = {}
+            for stage_num, (iid_indices, ood_indices) in (
+                (2, (list(stage_2_indices), list(stage_3_indices))),
+                (3, (list(stage_3_indices), list(stage_2_indices))),
+            ):
+                np.random.seed(123)
+                np.random.shuffle(iid_indices)
+                np.random.shuffle(ood_indices)
+                num_training = int(len(iid_indices) * 0.9)
+                num_validation = int(len(iid_indices) * 0.05)
+                num_test_ood = 500
+                splits[stage_num] = {
+                    'train': set(iid_indices[:num_training]),
+                    'valid': set(iid_indices[num_training:num_training + num_validation]),
+                    'test': set(iid_indices[num_training + num_validation:]),
+                    'ood': set(ood_indices[:num_test_ood]),
+                }
+
+            data_lists = {stage_num: {'train': [], 'valid': [], 'test': [], 'ood': []} for stage_num in (2, 3)}
+
             for id, graph in tqdm(enumerate(graph_list)):
-                data = Data(x = torch.tensor(graph_list[id]['node_feat']).to(dtype=torch.long), 
-                            edge_index = torch.tensor(graph_list[id]['all_edge_index']).to(dtype=torch.long), 
+                data = Data(x = torch.tensor(graph_list[id]['node_feat']).to(dtype=torch.long),
+                            edge_index = torch.tensor(graph_list[id]['all_edge_index']).to(dtype=torch.long),
                             sub_edge_index = torch.tensor(graph_list[id]['sub_edge_index']).to(dtype=torch.long),
                             gain = torch.tensor(graph_list[id]['gain']).reshape(-1, 1).to(dtype=torch.float32),
                             pm = torch.tensor(graph_list[id]['pm']).reshape(-1, 1).to(dtype=torch.float32),
@@ -171,30 +171,22 @@ class AMPDataProcessor(InMemoryDataset):
                         sub_data = self.pathlap_pre_transform(Data(x=data.x, edge_index=sub_edge_index))
                         data['pat_edge_pe_sub'] = sub_data['pat_edge_pe']
                         data['Lambda_sub'] = sub_data['Lambda']
-                # append to a list
-                stage = graph_list[id]['stage']
-                if stage == self.train_stage_num:
-                    if id in train_indices:
-                        train_data_list.append(data)
-                    elif id in valid_indices:
-                        val_data_list.append(data)
-                    elif id in test_indices:
-                        test_data_list.append(data)
-                else:
-                    if id in test_ood_indices:
-                        test_ood_data_list.append(data)
+                # append to a list, once per stage-config this graph participates in
+                for stage_num in (2, 3):
+                    split = splits[stage_num]
+                    if id in split['train']:
+                        data_lists[stage_num]['train'].append(data)
+                    elif id in split['valid']:
+                        data_lists[stage_num]['valid'].append(data)
+                    elif id in split['test']:
+                        data_lists[stage_num]['test'].append(data)
+                    elif id in split['ood']:
+                        data_lists[stage_num]['ood'].append(data)
 
-            train_data, train_slices = self.collate(train_data_list)
-            torch.save((train_data, train_slices), self.processed_paths['train'])
-
-            valid_data, valid_slices = self.collate(val_data_list)
-            torch.save((valid_data, valid_slices), self.processed_paths['valid'])
-
-            test_data, test_slices = self.collate(test_data_list)
-            torch.save((test_data, test_slices), self.processed_paths['test'])
-
-            test_ood_data, test_ood_slices = self.collate(test_ood_data_list)
-            torch.save((test_ood_data, test_ood_slices), self.processed_paths['ood'])
+            for stage_num in (2, 3):
+                for key in ('train', 'valid', 'test', 'ood'):
+                    coll_data, coll_slices = self.collate(data_lists[stage_num][key])
+                    torch.save((coll_data, coll_slices), self.processed_paths[f'{key}_{stage_num}'])
 
     def read_csv_graph_raw(self, raw_dir):
         label_path = osp.join(raw_dir, 'perform101.csv')
