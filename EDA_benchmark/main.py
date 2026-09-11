@@ -16,6 +16,8 @@ def main():
     parser.add_argument('--device', dest = 'device', type = str, default = '0', help = 'when use ray can set multiple devices')
     parser.add_argument('--mode', dest = 'mode', type=str, default ='train_test', help='[train], [test], [train_test]')
     parser.add_argument('--seed', type=int, default=None)
+    parser.add_argument('--train_stage_num', type=int, default=None, choices=[2, 3],
+                        help='overrides task.train_stage_num (which stage is in-distribution)')
     # these are for raytune
     parser.add_argument('--num_trial', dest = 'num_trial', type = int, default = 100, help = 'number of trials to tune')
     parser.add_argument('--num_cpu', dest = 'num_cpu', type = int, default = 15, help = 'numer of cpu threads')
@@ -32,6 +34,10 @@ def main():
     # possibly overwrite random seed
     if args.seed is not None:
         config['utils']['seed'] = args.seed
+
+    # possibly overwrite which stage is treated as in-distribution
+    if args.train_stage_num is not None:
+        config['task']['train_stage_num'] = args.train_stage_num
 
     print(config)
     config['train']['device'] = args.device
