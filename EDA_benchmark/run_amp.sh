@@ -10,6 +10,7 @@ do
 
 #python main.py --general_config amp/$target/$gine_config --pe_config lap10/lap_n_spe_e_spe --seed $seed --device $device
 #python main.py --general_config amp/$target/$gine_config --pe_config maglap10/maglap_1q_n_spe_e_spe --seed $seed --device $device
+#python main.py --general_config amp/$target/$gine_config --pe_config pathlap10/pathlap_n_spe_e_spe --seed $seed --device $device
 
 python main.py --general_config amp/$target/$gine_config --pe_config maglap10/maglap_5q001_n_spe_e_spe --seed $seed --device $device
 

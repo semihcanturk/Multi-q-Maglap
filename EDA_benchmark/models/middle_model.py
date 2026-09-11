@@ -13,7 +13,8 @@ from torch_geometric.utils import to_dense_batch
 
 from models.base_model import BaseModel, MLPs
 from models.pe_encoders import PEEmbedderWrapper
-from maglap.handle_complex import ComplexHandler, SparseComplexNetwork, DenseComplexNetwork
+from maglap.handle_complex import ComplexHandler, SparseComplexNetwork, DenseComplexNetwork, SparseEdgeSPE
+from maglap.get_path_lap import build_two_path_index
 
 class RedrawProjection:
     def __init__(self, model, redraw_interval):
@@ -35,13 +36,17 @@ class RedrawProjection:
         self.num_last_redraw += 1
 
 class MiddleModel(torch.nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, pathlap_stage='full'):
         super().__init__()
         # parameters for middle model
         self.num_layers = args['num_layers']
         self.pe_type = args.get('pe_type')
         self.pe_strategy = args.get('pe_strategy')
         self.q_dim = args.get('q_dim')
+        # 'full' = message passing over the real graph (data.edge_index); 'sub' = over
+        # AMP's value-grouping sub_edge_index, which needs its own path-Laplacian edge
+        # spectrum (kwargs['pat_edge_pe_sub']/['Lambda_sub']) since it's a different graph.
+        self.pathlap_stage = pathlap_stage
 
         # parameters for base model
         self.base_model_name = args['name']
@@ -70,7 +75,12 @@ class MiddleModel(torch.nn.Module):
         if self.pe_type is not None:
             self.pe_strategy = args['pe_strategy']
             #pe_dim = 2 * self.q_dim * int(args['mag_pe_dim_input']) if self.pe_type == 'maglap' else int(args['lap_pe_dim_input'])
-            pe_dim = args.get('mag_pe_dim_input') if self.pe_type == 'maglap' else args.get('lap_pe_dim_input')
+            if self.pe_type == 'maglap':
+                pe_dim = args.get('mag_pe_dim_input')
+            elif self.pe_type == 'pathlap':
+                pe_dim = args.get('pat_pe_dim_input')
+            else:
+                pe_dim = args.get('lap_pe_dim_input')
             if self.pe_strategy == 'variant':
                 #eigval_dim = pe_dim // 2 if self.pe_type == 'maglap' else pe_dim
                 #pe_dim_output = args[self.pe_type[:3]+'_pe_dim_output']
@@ -87,11 +97,18 @@ class MiddleModel(torch.nn.Module):
                 desired_pe_edge_dim = args['hidden_dim']
                 if args.get('pe_embedder') is not None:
                     desired_pe_edge_dim += self.pe_output_dim
-                self.sparse_pe_net = SparseComplexNetwork(pe_dim, q_dim, self.pe_type, desired_pe_edge_dim,
-                                                          network_type=args['pe_encoder'])
-                if self.base_model_name in ['GPS']: # or other transformer based model?
-                   self.dense_pe_net = DenseComplexNetwork(pe_dim, q_dim, self.pe_type, 4,
-                                                           network_type=args['pe_encoder']) # 4 is # heads of multi-head attention
+                if self.pe_type == 'pathlap':
+                    # genuine edge-indexed (p=1 path-Hodge-Laplacian) eigenvectors, not the
+                    # node-PE-gram-over-edge_index features SparseComplexNetwork computes.
+                    norm = args['pe_embedder'].get('norm') if args.get('pe_embedder') is not None else None
+                    self.edge_pe_net = SparseEdgeSPE(pe_dim=pe_dim, out_dim=desired_pe_edge_dim,
+                                                      eigval_dim=args['eigval_encoder']['out'], norm=norm)
+                else:
+                    self.sparse_pe_net = SparseComplexNetwork(pe_dim, q_dim, self.pe_type, desired_pe_edge_dim,
+                                                              network_type=args['pe_encoder'])
+                    if self.base_model_name in ['GPS']: # or other transformer based model?
+                       self.dense_pe_net = DenseComplexNetwork(pe_dim, q_dim, self.pe_type, 4,
+                                                               network_type=args['pe_encoder']) # 4 is # heads of multi-head attention
                 #if self.pe_type == 'maglap':
                 #self.complex_handler = ComplexHandler(pe_dim=pe_dim, q_dim=q_dim, pe_type=self.pe_type)
                 #self.eigval_encoder = MLPs(args['eigval_encoder']['in'], args['eigval_encoder']['hidden'],
@@ -129,20 +146,33 @@ class MiddleModel(torch.nn.Module):
         return x
     def variant_forward(self, x, edge_index, batch, **kwargs):
         z = kwargs[self.pe_type[:3]+'_pe']
+        # pathlap's Lambda is stacked [B, 2, k] (node/edge); node-level PE consumers expect
+        # the plain [B, k] shape lap/maglap already give them.
+        node_lambda = kwargs['Lambda'][:, 0, :] if self.pe_type == 'pathlap' else kwargs['Lambda']
         #z = torch.cat([z, kwargs['Lambda'][batch]], dim=-1) # concat eigenvalues
-        z = self.pe_projection(z, kwargs['Lambda'], edge_index, batch)
+        z = self.pe_projection(z, node_lambda, edge_index, batch)
         x = torch.cat([x, z], dim=-1)
         for conv in self.convs:
             x = conv(x = x, edge_index = edge_index, batch = batch, **kwargs)
         return x
     def invariant_fixed_forward(self, x, edge_index, batch, **kwargs):
         z = kwargs[self.pe_type[:3]+'_pe']
+        node_lambda = kwargs['Lambda'][:, 0, :] if self.pe_type == 'pathlap' else kwargs['Lambda']
 
         if self.pe_projection is not None:
-            node_pe = self.pe_projection(z, kwargs['Lambda'], edge_index, batch)
+            node_pe = self.pe_projection(z, node_lambda, edge_index, batch)
             x = torch.cat([x, node_pe], dim=-1)
 
-        if 'edge_attr' in kwargs:
+        if self.pe_type == 'pathlap':
+            # a genuinely separate edge spectrum per graph structure this stage runs
+            # message passing over (see pathlap_stage docstring in __init__).
+            suffix = '_sub' if self.pathlap_stage == 'sub' else ''
+            pair_index = build_two_path_index(edge_index, x.size(0))
+            edge_batch = batch[edge_index[0]]
+            edge_pe = self.edge_pe_net(kwargs['pat_edge_pe' + suffix], kwargs['Lambda' + suffix],
+                                        pair_index, edge_batch)
+            edge_attr = kwargs['edge_attr'] + edge_pe if 'edge_attr' in kwargs else edge_pe
+        elif 'edge_attr' in kwargs:
             edge_attr = kwargs['edge_attr'] + self.sparse_pe_net(z, kwargs['Lambda'], edge_index, batch)
         else:
             edge_attr = self.sparse_pe_net(z, kwargs['Lambda'], edge_index, batch)

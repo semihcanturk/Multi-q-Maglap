@@ -59,7 +59,7 @@ class HLSModel(nn.Module):
         node_emb_dim = args['hidden_dim'] // 7
         #if self.pe_type is not None and args['pe_strategy'] == 'variant':
         if self.pe_type is not None and args.get('pe_embedder') is not None:
-            pe_dim_output = args['mag_pe_dim_output'] if self.pe_type == 'maglap' else args['lap_pe_dim_output']
+            pe_dim_output = args[self.pe_type[:3]+'_pe_dim_output']
             edge_emb_dim = (args['hidden_dim']+pe_dim_output) // 2
         else:
             edge_emb_dim = (args['hidden_dim']) // 2
@@ -80,8 +80,10 @@ class HLSModel(nn.Module):
         if self.pe_type is None:
             x = self.middle_model(x, batch_data.edge_index, batch_data.batch, edge_attr = edge_attr)
         else:
-            x = self.middle_model(x, batch_data.edge_index, batch_data.batch, edge_attr = edge_attr, 
+            x = self.middle_model(x, batch_data.edge_index, batch_data.batch, edge_attr = edge_attr,
                                   mag_pe = getattr(batch_data, 'mag_pe', None), lap_pe = getattr(batch_data, 'lap_pe', None),
+                                  pat_pe = getattr(batch_data, 'pat_pe', None),
+                                  pat_edge_pe = getattr(batch_data, 'pat_edge_pe', None),
                                   Lambda = batch_data.Lambda)
         # global pool and final MLP
         if self.target == 'cp':

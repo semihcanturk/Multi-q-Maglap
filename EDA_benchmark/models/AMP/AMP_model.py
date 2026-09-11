@@ -44,9 +44,11 @@ class AMPModel(nn.Module):
         self.node_encoder = NodeEncoder(self.hidden_dim // 3)
 
         # define middle model
-        self.middle_model1 = MiddleModel(self.args)
+        # middle_model1 message-passes over sub_edge_index (a value-grouping subgraph, not
+        # the real circuit edges), so pathlap needs a separate edge spectrum for that stage.
+        self.middle_model1 = MiddleModel(self.args, pathlap_stage='sub')
         self.bridge_layer = nn.Linear(self.middle_model1.out_dims, self.hidden_dim) # align dimension
-        self.middle_model2 = MiddleModel(self.args)
+        self.middle_model2 = MiddleModel(self.args, pathlap_stage='full')
 
         # define final layer
         self.gain_mlp = MLPs(self.middle_model2.out_dims, self.middle_model2.out_dims, 1, args['mlp_out']['num_layer'])
@@ -60,8 +62,12 @@ class AMPModel(nn.Module):
         if self.pe_type is None:
             x = self.middle_model1(x, batch_data.sub_edge_index, batch_data.batch)
         else:
-            x = self.middle_model1(x, batch_data.sub_edge_index, batch_data.batch, 
+            x = self.middle_model1(x, batch_data.sub_edge_index, batch_data.batch,
                                    mag_pe = getattr(batch_data, 'mag_pe', None), lap_pe = getattr(batch_data, 'lap_pe', None),
+                                   pat_pe = getattr(batch_data, 'pat_pe', None),
+                                   pat_edge_pe = getattr(batch_data, 'pat_edge_pe', None),
+                                   pat_edge_pe_sub = getattr(batch_data, 'pat_edge_pe_sub', None),
+                                   Lambda_sub = getattr(batch_data, 'Lambda_sub', None),
                                   Lambda = batch_data.Lambda)
 
         # align dimension between middle model 1 and 2
@@ -70,8 +76,12 @@ class AMPModel(nn.Module):
         if self.pe_type is None:
             x = self.middle_model2(x, batch_data.edge_index, batch_data.batch)
         else:
-            x = self.middle_model2(x, batch_data.edge_index, batch_data.batch, 
+            x = self.middle_model2(x, batch_data.edge_index, batch_data.batch,
                                   mag_pe = getattr(batch_data, 'mag_pe', None), lap_pe = getattr(batch_data, 'lap_pe', None),
+                                  pat_pe = getattr(batch_data, 'pat_pe', None),
+                                  pat_edge_pe = getattr(batch_data, 'pat_edge_pe', None),
+                                  pat_edge_pe_sub = getattr(batch_data, 'pat_edge_pe_sub', None),
+                                  Lambda_sub = getattr(batch_data, 'Lambda_sub', None),
                                   Lambda = batch_data.Lambda)
         #final MLP
         x_add = global_add_pool(x, batch_data.batch)
