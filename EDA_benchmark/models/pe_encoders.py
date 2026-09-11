@@ -101,7 +101,7 @@ class PEEmbedder(nn.Module):
         if self.pe_type == 'maglap' and self.encoder_name != 'spe':
             # x = x.unflatten(-1, (self.q_dim, self.pe_dim, 2)) # [N, Q, pe_dim, 2]
             x = torch.cat([x.real.unsqueeze(-1), x.imag.unsqueeze(-1)], dim=-1)
-        elif self.pe_type == 'lap' and self.encoder_name != 'spe':  # laplacian pe
+        elif self.pe_type in ('lap', 'pathlap') and self.encoder_name != 'spe':  # laplacian pe
             # x = x.unflatten(-1, (1, self.pe_dim, 1))
             x = x.unsqueeze(1).unsqueeze(-1)
             Lambda = Lambda.unsqueeze(1)
