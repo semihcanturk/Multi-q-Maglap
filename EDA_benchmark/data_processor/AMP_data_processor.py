@@ -173,14 +173,14 @@ class AMPDataProcessor(InMemoryDataset):
                         data['Lambda_sub'] = sub_data['Lambda']
                 # append to a list
                 stage = graph_list[id]['stage']
-                if stage == 3:
+                if stage == self.train_stage_num:
                     if id in train_indices:
                         train_data_list.append(data)
                     elif id in valid_indices:
                         val_data_list.append(data)
                     elif id in test_indices:
                         test_data_list.append(data)
-                elif stage == 2:
+                else:
                     if id in test_ood_indices:
                         test_ood_data_list.append(data)
 
