@@ -1,0 +1,28 @@
+#!/bin/bash
+##SBATCH --partition=long
+#SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:l40s:1
+#SBATCH --mem=64G
+#SBATCH --time=23:59:00
+set -e
+
+date
+hostname
+pwd
+
+cd $SLURM_SUBMIT_DIR
+pwd
+
+module load python/3.12.4 cuda/12.6 gcc
+
+cp -r /home/semiki/projects/aip-wolfg/semiki/Multi-q-Maglap $SLURM_TMPDIR
+cd $SLURM_TMPDIR/Multi-q-Maglap
+
+source .venv/bin/activate
+
+echo $@
+eval $@
+
+
+echo "All done in sbatch."
+date
