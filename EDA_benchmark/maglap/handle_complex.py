@@ -204,6 +204,106 @@ class SparseComplexNetwork(torch.nn.Module):
 
 
 
+class SparseEdgeSPE(torch.nn.Module):
+    """Basis-invariant SPE features for *edge-level* eigenvectors (p=1 path Laplacian).
+
+    Given eigenvectors ``U`` of the 1-path Hodge Laplacian indexed by edges and the
+    matching eigenvalues ``lambda``, this evaluates the SPE kernel
+    ``K(e, f) = sum_l phi_l(lambda) U[e, l] U[f, l]`` on pairs of *consecutive* edges
+    (directed 2-paths ``u -> v -> w``, i.e. ``head(e) == tail(f)``) and on the diagonal
+    ``(e, e)``. Per edge the kernel values are pooled into up to three groups that keep
+    the direction information:
+
+    * ``diag``: ``K(e, e)``
+    * ``succ``: aggregate over successors ``f`` of ``e`` (``e -> f``)
+    * ``pred``: aggregate over predecessors ``f`` of ``e`` (``f -> e``)
+
+    The concatenated features are mapped to ``out_dim`` by an MLP. Because
+    ``phi`` acts on eigenvalues only, eigenvectors sharing an eigenvalue receive the
+    same weight, so the kernel is invariant to sign flips and to any orthogonal change
+    of basis inside a *complete* eigenspace; truncating inside an eigenspace breaks
+    this (as for the node-level SPE).
+
+    Args:
+        pe_dim: Number of eigenpairs ``k`` per graph.
+        out_dim: Output feature dimension per edge.
+        eigval_dim: Channels of the eigenvalue encoder (kernel channels).
+        lambda_index: Row of a stacked PathLap spectrum ``[B, pmax, k]`` holding the
+            eigenvalues that match the edge eigenvectors (1 for ``AddPathLaplacianEigenvectorPE3``).
+        aggr: ``"sum"`` or ``"mean"`` pooling over successors / predecessors.
+        include_diag / include_succ / include_pred: which feature groups to use.
+        scale_by_num_edges: Multiply each graph's eigenvectors by ``sqrt(num_edges)`` so
+            that entries are O(1) instead of O(1/sqrt(E)). Unit-norm eigenvectors make
+            every kernel value shrink like 1/E, i.e. the features of a graph 10x larger
+            than the training graphs are 10x smaller, which breaks size generalisation.
+            Unit-density scaling removes that dependence and keeps invariance intact.
+        norm: ``None``, ``"bn"`` or ``"ln"`` inside the MLPs.
+    """
+
+    def __init__(self, pe_dim, out_dim, eigval_dim=16, lambda_index=1, aggr='sum',
+                 include_diag=True, include_succ=True, include_pred=True,
+                 scale_by_num_edges=False, norm=None):
+        super().__init__()
+        assert aggr in ('sum', 'mean')
+        self.pe_dim = pe_dim
+        self.eigval_dim = eigval_dim
+        self.lambda_index = lambda_index
+        self.aggr = aggr
+        self.scale_by_num_edges = scale_by_num_edges
+        self.include_diag = include_diag
+        self.include_succ = include_succ
+        self.include_pred = include_pred
+        self.num_groups = int(include_diag) + int(include_succ) + int(include_pred)
+        assert self.num_groups > 0, "at least one of diag / succ / pred must be enabled"
+        self.eigval_encoder = MLPs(1, 32, eigval_dim, 3, norm=norm)
+        self.readout = MLPs(self.num_groups * eigval_dim, self.num_groups * eigval_dim, out_dim, 2, norm=norm)
+
+    @staticmethod
+    def _select_lambda(Lambda, lambda_index):
+        if Lambda.ndim == 3:      # PE3: [B, pmax, k]
+            return Lambda[:, lambda_index, :]
+        if Lambda.ndim == 2:      # [B, k]
+            return Lambda
+        raise ValueError(f"Unexpected Lambda shape: {tuple(Lambda.shape)}")
+
+    def forward(self, pe_edge, Lambda, pair_index, edge_batch):
+        """
+        Args:
+            pe_edge: ``[E, k]`` edge eigenvectors (rows may be zero for padded / self-loop edges).
+            Lambda: ``[B, pmax, k]`` or ``[B, k]`` eigenvalues.
+            pair_index: ``[2, P]`` edge-id pairs ``(e, f)`` with ``head(e) == tail(f)``.
+            edge_batch: ``[E]`` graph id of every edge.
+        Returns:
+            ``[E, out_dim]`` edge features.
+        """
+        E, k = pe_edge.shape
+        lam = self._select_lambda(Lambda, self.lambda_index)            # [B, k]
+        if self.scale_by_num_edges:
+            num_edges = torch.bincount(edge_batch, minlength=lam.size(0)).to(pe_edge.dtype)
+            pe_edge = pe_edge * num_edges[edge_batch].sqrt().unsqueeze(-1)
+        w = self.eigval_encoder(lam.unsqueeze(-1))                       # [B, k, C]
+        C = w.size(-1)
+        feats = []
+        if self.include_diag:
+            feats.append(torch.einsum('ek,ekc->ec', pe_edge * pe_edge, w[edge_batch]))
+        if self.include_succ or self.include_pred:
+            e, f = pair_index[0], pair_index[1]
+            prod = pe_edge[e] * pe_edge[f]                               # [P, k]
+            g = torch.einsum('pk,pkc->pc', prod, w[edge_batch[e]])       # [P, C]
+            ones = g.new_ones(g.size(0), 1)
+            if self.include_succ:
+                succ = g.new_zeros(E, C).index_add_(0, e, g)
+                if self.aggr == 'mean':
+                    succ = succ / g.new_zeros(E, 1).index_add_(0, e, ones).clamp_(min=1)
+                feats.append(succ)
+            if self.include_pred:
+                pred = g.new_zeros(E, C).index_add_(0, f, g)
+                if self.aggr == 'mean':
+                    pred = pred / g.new_zeros(E, 1).index_add_(0, f, ones).clamp_(min=1)
+                feats.append(pred)
+        return self.readout(torch.cat(feats, dim=-1))
+
+
 class DenseComplexNetwork(torch.nn.Module):
     def __init__(self, pe_dim, q_dim, pe_type, out_dim, network_type='spe', norm=None):
         super(DenseComplexNetwork, self).__init__()
@@ -225,7 +325,7 @@ class DenseComplexNetwork(torch.nn.Module):
 
     def forward(self, x, Lambda, batch):
         x, _ = to_dense_batch(x, batch) # [B, N, Q, pe_dim]
-        if self.pe_type == 'lap':
+        if self.pe_type in ('lap', 'pathlap'):
             x = x.unsqueeze(-2) + 0 * 1j # [B, N, 1, pe_dim]
             Lambda = Lambda.unsqueeze(1)  # [B, 1, pe_dim]
         # Lambda = Lambda.unflatten(-1, (self.complex_handler.q_dim, -1))  # [B, q_dim, pe_actual_dim, 1]
