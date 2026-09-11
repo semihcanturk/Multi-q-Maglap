@@ -18,6 +18,7 @@ import torch_geometric.transforms as T
 
 from utils import create_nested_folder
 from maglap.get_mag_lap import AddMagLaplacianEigenvectorPE, AddLaplacianEigenvectorPE
+from maglap.get_path_lap import AddPathLaplacianEigenvectorPE3
 
 
 class AMPDataProcessor(InMemoryDataset):
@@ -45,6 +46,11 @@ class AMPDataProcessor(InMemoryDataset):
             self.mag_pre_transform = Compose([AddMagLaplacianEigenvectorPE(k=config['model']['mag_pe_dim_input'], q=config['model']['q'],
                                                          multiple_q=config['model']['q_dim'], attr_name='mag_pe',
                                                                            dynamic_q=self.dynamic_q)])
+        elif self.pe_type == 'pathlap':
+            pre_transform = Compose([T.AddRandomWalkPE(walk_length = config['model']['se_pe_dim_input'], attr_name = 'rw_se')])
+            self.pathlap_pre_transform = Compose([AddPathLaplacianEigenvectorPE3(
+                k=config['model']['pat_pe_dim_input'], node_attr_name='pat_pe', edge_attr_name='pat_edge_pe',
+                normalize=config['model'].get('pathlap_normalize', True))])
         super().__init__(root = self.save_folder, pre_transform = pre_transform)
         if mode == 'train':
             self.data, self.slices = torch.load(self.processed_paths['train'])
@@ -69,6 +75,10 @@ class AMPDataProcessor(InMemoryDataset):
             processed_dir += '_' + str(self.config['model']['mag_pe_dim_input']) + 'k_' + str(self.config['model']['q_dim']) + 'q' + str(self.config['model']['q'])
             if self.dynamic_q:
                 processed_dir += '_dynamic'
+        elif self.pe_type == 'pathlap':
+            processed_dir += '_pathlap' + str(self.config['model']['pat_pe_dim_input'])
+            if self.config['model'].get('pathlap_normalize', True) is False:
+                processed_dir += '_nonorm'
         return processed_dir
     
     @property
@@ -147,6 +157,20 @@ class AMPDataProcessor(InMemoryDataset):
                         mag_data = self.mag_pre_transform(data)
                         data['mag_pe'] = mag_data['mag_pe']
                         data['Lambda'] = mag_data['Lambda']
+                    elif self.pe_type == 'pathlap':
+                        path_data = self.pathlap_pre_transform(data)
+                        data['pat_pe'] = path_data['pat_pe']
+                        data['pat_edge_pe'] = path_data['pat_edge_pe']
+                        data['Lambda'] = path_data['Lambda']
+                        # get_subgraph_edge returns a plain [] (not a (2,0) array) when no
+                        # node-value group has more than one member, which collapses to a
+                        # malformed 1-D empty tensor here.
+                        sub_edge_index = data.sub_edge_index
+                        if sub_edge_index.dim() != 2:
+                            sub_edge_index = sub_edge_index.view(2, -1)
+                        sub_data = self.pathlap_pre_transform(Data(x=data.x, edge_index=sub_edge_index))
+                        data['pat_edge_pe_sub'] = sub_data['pat_edge_pe']
+                        data['Lambda_sub'] = sub_data['Lambda']
                 # append to a list
                 stage = graph_list[id]['stage']
                 if stage == 3:
