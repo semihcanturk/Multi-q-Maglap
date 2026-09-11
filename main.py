@@ -115,7 +115,7 @@ class Trainer:
 
         # init wandb
         if cfg.wandb:
-            raise Exception('init wandb or disable it')
+            wandb.init()
 
 
     def train(self):

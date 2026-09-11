@@ -27,6 +27,8 @@ class AMPDataProcessor(InMemoryDataset):
         create_nested_folder(self.save_folder)
         self.divide_seed = config['task']['divide_seed']
         self.mode = mode
+        self.train_stage_num = config['task']['train_stage_num']
+        assert self.train_stage_num in [2, 3]
         self.raw_data_root = config['task']['raw_data_path']
         self.pe_type = config['model'].get('pe_type')
         if self.pe_type is None:
@@ -93,12 +95,16 @@ class AMPDataProcessor(InMemoryDataset):
             
             raw_data_path = self.config['task']['raw_data_path']
             graph_list, stage_2_indices, stage_3_indices = self.read_csv_graph_raw(raw_data_path)
+            if self.train_stage_num == 2:
+                iid_indices, ood_indices = stage_2_indices, stage_3_indices
+            else:
+                iid_indices, ood_indices = stage_3_indices, stage_2_indices
             np.random.seed(123)
-            np.random.shuffle(stage_3_indices)
-            np.random.shuffle(stage_2_indices)
-            num_training = int(len(stage_3_indices) * 0.9)
-            num_validation = int(len(stage_3_indices) * 0.05)
-            num_test = int(len(stage_3_indices) * 0.05)
+            np.random.shuffle(iid_indices)
+            np.random.shuffle(ood_indices)
+            num_training = int(len(iid_indices) * 0.9)
+            num_validation = int(len(iid_indices) * 0.05)
+            num_test = int(len(iid_indices) * 0.05)
             '''num_training = int(10000 * 0.9)
             num_validation = int(10000 * 0.05)
             num_test = int(10000 * 0.05)'''
@@ -108,10 +114,10 @@ class AMPDataProcessor(InMemoryDataset):
             train_indices = indices__[num_test + num_validation:]
             valid_indices = indices__[num_test:num_test + num_validation]
             test_indices = indices__[:num_test]'''
-            train_indices = stage_3_indices[:num_training]
-            valid_indices = stage_3_indices[num_training:num_training + num_validation]
-            test_indices = stage_3_indices[num_training + num_validation:]
-            test_ood_indices = stage_2_indices[:num_test_ood]
+            train_indices = iid_indices[:num_training]
+            valid_indices = iid_indices[num_training:num_training + num_validation]
+            test_indices = iid_indices[num_training + num_validation:]
+            test_ood_indices = ood_indices[:num_test_ood]
             
             train_data_list = []
             val_data_list = []

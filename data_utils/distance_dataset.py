@@ -3,7 +3,7 @@ import os.path as osp
 import pickle
 import shutil
 from typing import Callable, List, Optional
-import mmcv
+# import mmcv
 import torch
 from tqdm import tqdm
 import numpy as np

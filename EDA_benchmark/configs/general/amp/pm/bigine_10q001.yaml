@@ -12,6 +12,7 @@ task:
   divide_seed: default #set as default or a seed
   raw_data_path: './data_raw/AMP/'
   data_processor: AMPDataProcessor
+  train_stage_num: 2
 
 train:
   batch_size: 64

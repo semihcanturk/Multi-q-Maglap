@@ -35,6 +35,13 @@ class AMPRunner():
         self.train_folder = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+'/'+str(config['model']['name'])+'/'
         self.result_csv = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+'/'+str(config['model']['name'])+'/result.csv'
         create_nested_folder(self.train_folder)
+        self.train_stage_num = config['task']['train_stage_num']
+        assert self.train_stage_num in [2, 3]
+        if self.train_stage_num == 2:
+            self.stage_id, self.stage_ood = 'stage 2', 'stage 3'
+        else:
+            self.stage_id, self.stage_ood = 'stage 3', 'stage 2'
+
         # define the loss criterion
         if self.config['train']['criterion'] == 'L1':
             self.criterion = nn.L1Loss()
@@ -152,7 +159,7 @@ class AMPRunner():
         y_pm_list = []
         y_bw_list = []
         for batch_data in data_loader:
-            batch_data.to(self.device)
+            batch_data.to('cuda:'+str(self.device) if torch.cuda.is_available() else 'cpu')
             if self.config['train']['directed'] == 0:
                 all_edge_index = to_undirected(batch_data.edge_index)
                 sub_edge_index = to_undirected(batch_data.sub_edge_index)
@@ -260,10 +267,10 @@ class AMPRunner():
         for test_name in test_list:
             gain_mse, gain_rmse, gain_r2, pm_mse, pm_rmse, pm_r2, bw_mse, bw_rmse, bw_r2 = self.test_a_task(test_name)
             if test_name == 'id':
-                row = ['stage 3', str(len(self.test_data_dict[test_name])), gain_mse, gain_rmse, gain_r2, pm_mse, pm_rmse, pm_r2, bw_mse, bw_rmse, bw_r2]
+                row = [self.stage_id, str(len(self.test_data_dict[test_name])), gain_mse, gain_rmse, gain_r2, pm_mse, pm_rmse, pm_r2, bw_mse, bw_rmse, bw_r2]
                 table.add_row(row)
             elif test_name == 'ood':
-                row = ['stage 2', str(len(self.test_data_dict[test_name])), gain_mse, gain_rmse, gain_r2, pm_mse, pm_rmse, pm_r2, bw_mse, bw_rmse, bw_r2]
+                row = [self.stage_ood, str(len(self.test_data_dict[test_name])), gain_mse, gain_rmse, gain_r2, pm_mse, pm_rmse, pm_r2, bw_mse, bw_rmse, bw_r2]
                 table.add_row(row)
             if self.config['train']['wandb'] == 1:
                 wandb.run.summary[test_name + '-gain_rmse'] = gain_rmse
@@ -290,7 +297,7 @@ class AMPRunner():
         pred_bw_list = []
         y_bw_list = []
         for data_idx, batch_data in tqdm(enumerate(self.test_loader_dict[testset_name])):
-            batch_data.to(self.device)
+            batch_data.to('cuda:'+str(self.device) if torch.cuda.is_available() else 'cpu')
             if self.config['train']['directed'] == 0:
                 all_edge_index = to_undirected(batch_data.edge_index)
                 sub_edge_index = to_undirected(batch_data.sub_edge_index)
@@ -338,7 +345,7 @@ class AMPRunner():
         if self.config['train']['wandb'] == 1:
             for key in items.keys():
                 if 'loss' in key or self.config['task']['target'] in key:
-                    wandb.log({mode + ' ' + str(key): items[key]}, step=epoch_idx)
+                    wandb.log({mode + '/' + str(key): items[key]}, step=epoch_idx)
 
     def init_wandb(self):
         if self.config['train']['wandb'] == 1:
