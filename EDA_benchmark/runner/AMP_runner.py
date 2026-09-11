@@ -32,8 +32,12 @@ class AMPRunner():
     def __init__(self, config):
         self.config = config
         self.task = config['task']
-        self.train_folder = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+'/'+str(config['model']['name'])+'/'
-        self.result_csv = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+'/'+str(config['model']['name'])+'/result.csv'
+        # train_stage_num is part of the path: stage2/stage3 runs of the same
+        # pe/target/model combo are independent SLURM jobs that can run concurrently,
+        # and would otherwise clobber each other's checkpoints/result.csv.
+        stage_suffix = '_stage' + str(config['task']['train_stage_num'])
+        self.train_folder = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+stage_suffix+'/'+str(config['model']['name'])+'/'
+        self.result_csv = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+stage_suffix+'/'+str(config['model']['name'])+'/result.csv'
         create_nested_folder(self.train_folder)
         self.train_stage_num = config['task']['train_stage_num']
         assert self.train_stage_num in [2, 3]
@@ -349,7 +353,8 @@ class AMPRunner():
 
     def init_wandb(self):
         if self.config['train']['wandb'] == 1:
-            wandb.init(project='EDA_benchmark', name = self.config['task']['name']+'_'+str(self.config['task']['type'])+'_'+self.config['task']['target']+'_'+self.config['model']['name'])
+            wandb.init(project='EDA_benchmark', name = self.config['task']['name']+'_'+str(self.config['task']['type'])+'_'+self.config['task']['target']+'_'+self.config['model']['name']
+                       +'_'+str(self.config['model'].get('pe_file_name'))+'_stage'+str(self.config['task']['train_stage_num']))
     def save_model(self, valid_metric, epoch_idx):
         if valid_metric < self.best_valid_metric:
             self.best_valid_metric = valid_metric
