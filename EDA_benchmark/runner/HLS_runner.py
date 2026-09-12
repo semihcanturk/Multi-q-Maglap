@@ -32,7 +32,9 @@ class HLSRunner():
         self.config = config
         self.task = config['task']
         self.train_folder = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+'/'+str(config['model']['name'])+'/'
-        self.result_csv = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+'/'+str(config['model']['name'])+'/result.csv'
+        # one file per seed (not shared/overwritten across seeds) so a sweep's 5 runs
+        # can be aggregated afterwards -- see aggregate_seed_results.py.
+        self.result_csv = self.train_folder+'result_seed'+str(config['utils']['seed'])+'.csv'
         create_nested_folder(self.train_folder)
         # define the loss criterion
         if self.config['train']['criterion'] == 'L1':

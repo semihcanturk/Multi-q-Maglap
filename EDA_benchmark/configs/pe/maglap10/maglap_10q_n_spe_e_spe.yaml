@@ -1,5 +1,5 @@
 model:
-  pe_file_name: maglap_5q_n_spe_e_spe
+  pe_file_name: maglap_10q_n_spe_e_spe
   pe_type: maglap
   q: 0.05
   q_dim: 10
