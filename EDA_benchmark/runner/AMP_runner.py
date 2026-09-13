@@ -27,6 +27,7 @@ from ray.tune import CLIReporter
 from hyperopt import hp
 
 from utils import exception_not_defined, create_nested_folder, find_latest_model, delete_file_with_head
+from maglap.get_path_lap import realign_edge_pe
 
 class AMPRunner():
     def __init__(self, config):
@@ -169,6 +170,15 @@ class AMPRunner():
             if self.config['train']['directed'] == 0:
                 all_edge_index = to_undirected(batch_data.edge_index)
                 sub_edge_index = to_undirected(batch_data.sub_edge_index)
+                # pat_edge_pe / pat_edge_pe_sub have one row per *directed* edge of their
+                # respective edge list, so they have to follow it onto the symmetrised
+                # version (reverse copies get zero PE).
+                if getattr(batch_data, 'pat_edge_pe', None) is not None:
+                    batch_data.pat_edge_pe = realign_edge_pe(batch_data.pat_edge_pe, batch_data.edge_index,
+                                                             all_edge_index, batch_data.num_nodes)
+                if getattr(batch_data, 'pat_edge_pe_sub', None) is not None:
+                    batch_data.pat_edge_pe_sub = realign_edge_pe(batch_data.pat_edge_pe_sub, batch_data.sub_edge_index,
+                                                                 sub_edge_index, batch_data.num_nodes)
                 batch_data.edge_index = all_edge_index
                 batch_data.sub_edge_index = sub_edge_index
             y_gain = getattr(batch_data, 'gain', None)
@@ -307,6 +317,15 @@ class AMPRunner():
             if self.config['train']['directed'] == 0:
                 all_edge_index = to_undirected(batch_data.edge_index)
                 sub_edge_index = to_undirected(batch_data.sub_edge_index)
+                # pat_edge_pe / pat_edge_pe_sub have one row per *directed* edge of their
+                # respective edge list, so they have to follow it onto the symmetrised
+                # version (reverse copies get zero PE).
+                if getattr(batch_data, 'pat_edge_pe', None) is not None:
+                    batch_data.pat_edge_pe = realign_edge_pe(batch_data.pat_edge_pe, batch_data.edge_index,
+                                                             all_edge_index, batch_data.num_nodes)
+                if getattr(batch_data, 'pat_edge_pe_sub', None) is not None:
+                    batch_data.pat_edge_pe_sub = realign_edge_pe(batch_data.pat_edge_pe_sub, batch_data.sub_edge_index,
+                                                                 sub_edge_index, batch_data.num_nodes)
                 batch_data.edge_index = all_edge_index
                 batch_data.sub_edge_index = sub_edge_index
             y_gain = getattr(batch_data, 'gain', None)

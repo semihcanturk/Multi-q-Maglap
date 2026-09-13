@@ -26,6 +26,7 @@ from ray.tune import CLIReporter
 from hyperopt import hp
 
 from utils import exception_not_defined, create_nested_folder, find_latest_model, delete_file_with_head
+from maglap.get_path_lap import realign_edge_pe
 
 class HLSRunner():
     def __init__(self, config):
@@ -157,7 +158,13 @@ class HLSRunner():
             edge_index = batch_data.edge_index
             edge_attr = batch_data.edge_attr
             if self.config['train']['directed'] == 0:
-                edge_index, edge_attr = to_undirected(edge_index, edge_attr, reduce = 'add')
+                undirected_edge_index, edge_attr = to_undirected(edge_index, edge_attr, reduce = 'add')
+                # pat_edge_pe has one row per *directed* edge, so it has to follow the
+                # edge list onto its symmetrised version (reverse copies get zero PE).
+                if getattr(batch_data, 'pat_edge_pe', None) is not None:
+                    batch_data.pat_edge_pe = realign_edge_pe(batch_data.pat_edge_pe, edge_index,
+                                                             undirected_edge_index, batch_data.num_nodes)
+                edge_index = undirected_edge_index
                 batch_data.edge_index = edge_index
                 batch_data.edge_attr = edge_attr
             y = getattr(batch_data, self.config['task']['target'], None)
@@ -242,7 +249,13 @@ class HLSRunner():
             edge_index = batch_data.edge_index
             edge_attr = batch_data.edge_attr
             if self.config['train']['directed'] == 0:
-                edge_index, edge_attr = to_undirected(edge_index, edge_attr, reduce = 'add')
+                undirected_edge_index, edge_attr = to_undirected(edge_index, edge_attr, reduce = 'add')
+                # pat_edge_pe has one row per *directed* edge, so it has to follow the
+                # edge list onto its symmetrised version (reverse copies get zero PE).
+                if getattr(batch_data, 'pat_edge_pe', None) is not None:
+                    batch_data.pat_edge_pe = realign_edge_pe(batch_data.pat_edge_pe, edge_index,
+                                                             undirected_edge_index, batch_data.num_nodes)
+                edge_index = undirected_edge_index
                 batch_data.edge_index = edge_index
                 batch_data.edge_attr = edge_attr
             y = getattr(batch_data, self.config['task']['target'], None)

@@ -24,3 +24,4 @@ _spec.loader.exec_module(_module)
 
 AddPathLaplacianEigenvectorPE3 = _module.AddPathLaplacianEigenvectorPE3
 build_two_path_index = _module.build_two_path_index
+realign_edge_pe = _module.realign_edge_pe

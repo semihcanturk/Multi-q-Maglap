@@ -238,6 +238,46 @@ def _reindex_pe_edge(pe_edge, edge_index, num_nodes):
     return mapped
 
 
+def realign_edge_pe(pe_edge, old_edge_index, new_edge_index, num_nodes):
+    """Re-map an edge-indexed PE from one edge list to another.
+
+    Needed when a runner replaces ``data.edge_index`` with its symmetrised version
+    (the ``directed: 0`` configs): ``pat_edge_pe`` has one row per column of the
+    *original directed* edge_index, so it has to be re-ordered and padded to the new
+    edge list before it can be added to ``edge_attr``.
+
+    Edges of ``new_edge_index`` that are absent from ``old_edge_index`` -- the reverse
+    copies ``to_undirected`` adds -- get a zero PE row, the convention
+    :func:`_reindex_pe_edge` already uses for self-loops. Zero rows drop out of every
+    product :class:`SparseEdgeSPE` forms, so the edge features are the ones the
+    directed graph would have produced, scattered onto the symmetrised edge list.
+
+    Args:
+        pe_edge: ``[E_old, k]`` PE aligned with ``old_edge_index``.
+        old_edge_index: ``[2, E_old]`` edge index the PE was computed on.
+        new_edge_index: ``[2, E_new]`` edge index to align to.
+        num_nodes: Number of nodes (of the whole batch).
+    Returns:
+        ``[E_new, k]`` PE aligned with ``new_edge_index``.
+    """
+    E_new = new_edge_index.size(1)
+    if old_edge_index.size(1) == 0:
+        return pe_edge.new_zeros(E_new, pe_edge.size(1))
+
+    old_keys = old_edge_index[0] * num_nodes + old_edge_index[1]
+    new_keys = new_edge_index[0] * num_nodes + new_edge_index[1]
+
+    # Duplicate (src, dst) pairs carry identical PE rows, so the first match is fine.
+    order = torch.argsort(old_keys)
+    sorted_keys = old_keys[order]
+    pos = torch.searchsorted(sorted_keys, new_keys).clamp(max=sorted_keys.numel() - 1)
+    found = sorted_keys[pos] == new_keys
+
+    out = pe_edge.new_zeros(E_new, pe_edge.size(1))
+    out[found] = pe_edge[order[pos[found]]]
+    return out
+
+
 def build_two_path_index(edge_index: Tensor, num_nodes: int, remove_self_loops: bool = True) -> Tensor:
     """Return all directed 2-paths of a (batched) graph as pairs of edge ids.
 
