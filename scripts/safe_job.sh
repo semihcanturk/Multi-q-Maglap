@@ -1,7 +1,7 @@
 #!/bin/bash
 
 project_name="Multi-q-Maglap"
-project_root="$HOME/PycharmProjects/Multi-q-Maglap"
+project_root="$HOME/Multi-q-Maglap"
 results_path="$SCRATCH/logs/Multi-q-Maglap"
 
 echo "GIT_COMMIT=${GIT_COMMIT:?GIT_COMMIT is not set. Use 'cluv submit' to submit this job script.}"
