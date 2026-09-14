@@ -8,6 +8,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem-per-gpu=64G
 
+module load python/3.12.4 cuda/12.6 gcc httpproxy
 # `cluv submit` runs `sbatch --chdir=<project dir>`, so the job starts in this project's
 # folder on the cluster, and the rest of the work is shared with the other clusters:
 exec bash scripts/train.sh "$@"
