@@ -290,7 +290,6 @@ class HLSRunner():
     def init_wandb(self):
         if self.config['train']['wandb'] == 1:
             #wandb.init(project='EDA_benchmark', name = self.config['task']['name']+'_'+str(self.config['task']['type'])+'_'+self.config['task']['target']+'_'+self.config['model']['name'])
-            wandb.login(key="cbbd9da073d5e6615442b343b4436e3b723f16da")
             wandb.init(project='EDA_benchmark_HLS', config=self.config)
     def save_model(self, valid_metric, epoch_idx):
         if valid_metric < self.best_valid_metric:

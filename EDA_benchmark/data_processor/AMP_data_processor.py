@@ -53,13 +53,13 @@ class AMPDataProcessor(InMemoryDataset):
                 normalize=config['model'].get('pathlap_normalize', True))])
         super().__init__(root = self.save_folder, pre_transform = pre_transform)
         if mode == 'train':
-            self.data, self.slices = torch.load(self.processed_paths[f'train_{self.train_stage_num}'])
+            self.data, self.slices = torch.load(self.processed_paths[f'train_{self.train_stage_num}'], weights_only=False)
         elif mode == 'valid':
-            self.data, self.slices = torch.load(self.processed_paths[f'valid_{self.train_stage_num}'])
+            self.data, self.slices = torch.load(self.processed_paths[f'valid_{self.train_stage_num}'], weights_only=False)
         elif mode == 'test_id':
-            self.data, self.slices = torch.load(self.processed_paths[f'test_{self.train_stage_num}'])
+            self.data, self.slices = torch.load(self.processed_paths[f'test_{self.train_stage_num}'], weights_only=False)
         elif mode == 'test_ood':
-            self.data, self.slices = torch.load(self.processed_paths[f'ood_{self.train_stage_num}'])
+            self.data, self.slices = torch.load(self.processed_paths[f'ood_{self.train_stage_num}'], weights_only=False)
     @property
     def raw_file_names(self):
         return []

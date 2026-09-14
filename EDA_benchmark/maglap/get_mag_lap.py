@@ -66,7 +66,7 @@ class AddMagLaplacianEigenvectorPE(BaseTransform):
         self.attr_name = attr_name
         self.kwargs = kwargs
 
-    def __call__(self, data: Data) -> Data:
+    def forward(self, data: Data) -> Data:
         from scipy.sparse.linalg import eigs, eigsh
         eig_fn = eigsh # always use hermitian version
 
@@ -302,7 +302,7 @@ class AddLaplacianEigenvectorPE(BaseTransform):
         self.is_undirected = is_undirected
         self.kwargs = kwargs
 
-    def __call__(self, data: Data) -> Data:
+    def forward(self, data: Data) -> Data:
         from scipy.sparse.linalg import eigs, eigsh
         eig_fn = eigsh
 
@@ -388,7 +388,7 @@ class AddSingularValuePE(BaseTransform):
         self.is_undirected = is_undirected
         self.kwargs = kwargs
 
-    def __call__(self, data: Data) -> Data:
+    def forward(self, data: Data) -> Data:
         from scipy.sparse.linalg import svds
         eig_fn = svds
 

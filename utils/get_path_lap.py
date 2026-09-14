@@ -529,7 +529,7 @@ class AddPathLaplacianEigenvectorPE4(BaseTransform):
         return data
 
 
-@functional_transform("add_laplacian_eigenvector_pe3_PathCpx")
+#@functional_transform("add_laplacian_eigenvector_pe3_PathCpx")
 class AddPathLaplacianEigenvectorPE3(BaseTransform):
     """Path-Hodge-Laplacian eigenvector PE (default, fast implementation).
 
