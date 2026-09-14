@@ -43,7 +43,7 @@ class HLSDataProcessor(InMemoryDataset):
                 k=config['model']['pat_pe_dim_input'], node_attr_name='pat_pe', edge_attr_name='pat_edge_pe',
                 normalize=config['model'].get('pathlap_normalize', True))])
         super().__init__(root = self.save_folder, pre_transform = pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[mode])
+        self.data, self.slices = torch.load(self.processed_paths[mode], weights_only=False)
     @property
     def raw_file_names(self):
         return []
