@@ -47,16 +47,17 @@ def delete_file_with_head(directory, head):
 
 def find_latest_model(directory, head):
     # find the latest model saved in folder with head
-    pattern = os.path.join(directory, f"{head}*epoch*.pth")
-    files = glob.glob(pattern)
+    files = glob.glob(os.path.join(directory, f"{head}*epoch*.pth"))
+    epoch_pattern = re.compile(r'epoch(\d+)\.pth$')
     max_epoch = -1
     max_file = None
-    pattern = re.compile(r'epoch(\d+)\.pth$')
     for file in files:
-        match = pattern.search(file)
-    if match:
-        epoch_num = int(match.group(1))
-        if epoch_num > max_epoch:
-            max_epoch = epoch_num
-            max_file = file
-    return file
+        match = epoch_pattern.search(file)
+        if match:
+            epoch_num = int(match.group(1))
+            if epoch_num > max_epoch:
+                max_epoch = epoch_num
+                max_file = file
+    if max_file is None:
+        raise FileNotFoundError(f"no checkpoint matching '{head}*epoch*.pth' in {directory}")
+    return max_file
