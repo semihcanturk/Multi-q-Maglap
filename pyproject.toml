@@ -245,7 +245,7 @@ sbatch_args = [{ account = "rrg-bengioy-ad" }, { account = "aip-wolfg" }]
 
 [tool.cluv.clusters.nibi]
 env = { UV_OFFLINE = "0", WANDB_MODE = "online" }
-sbatch_args = [{ account = "rrg-bengioy-ad" }, { account = "aip-wolfg" }]
+sbatch_args = [{ account = "def-bengioy" }, { account = "def-wolfg" }]
 
 [tool.cluv.clusters.trillium]
 sbatch_args = [{ account = "rrg-bengioy-ad" }, { account = "aip-wolfg" }]
