@@ -36,6 +36,9 @@ class HLSRunner():
         # one file per seed (not shared/overwritten across seeds) so a sweep's 5 runs
         # can be aggregated afterwards -- see aggregate_seed_results.py.
         self.result_csv = self.train_folder+'result_seed'+str(config['utils']['seed'])+'.csv'
+        # checkpoints are per-seed for the same reason: seeds of one sweep share
+        # this folder, and save_model deletes by prefix before writing.
+        self.model_prefix = 'model_seed'+str(config['utils']['seed'])+'_'
         create_nested_folder(self.train_folder)
         # define the loss criterion
         if self.config['train']['criterion'] == 'L1':
@@ -203,7 +206,7 @@ class HLSRunner():
             module = importlib.import_module(module_path)
             cls = getattr(module, attribute_name)
             self.model = cls(self.config['model'], self.config['task']['target'])
-            dict_path = find_latest_model(self.train_folder, 'model')
+            dict_path = find_latest_model(self.train_folder, self.model_prefix)
             state_dict = torch.load(dict_path) 
             self.model.load_state_dict(state_dict)
             self.model = self.model.to('cuda:'+str(self.device) if torch.cuda.is_available() else 'cpu')
@@ -294,8 +297,8 @@ class HLSRunner():
     def save_model(self, valid_metric, epoch_idx):
         if valid_metric < self.best_valid_metric:
             self.best_valid_metric = valid_metric
-            delete_file_with_head(self.train_folder, 'model')
-            torch.save(self.model.state_dict(), self.train_folder+'model'+'_epoch'+str(epoch_idx)+'.pth')
+            delete_file_with_head(self.train_folder, self.model_prefix)
+            torch.save(self.model.state_dict(), self.train_folder+self.model_prefix+'epoch'+str(epoch_idx)+'.pth')
 
     def raytune(self, tune_config, num_samples, num_cpu, num_gpu_per_trial):
         reporter = CLIReporter(parameter_columns=['hidden_dim'],metric_columns=['loss', 'mse', 'r2'])
