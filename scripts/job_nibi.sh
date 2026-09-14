@@ -8,5 +8,5 @@
 
 # Specific to Nibi: Apparently the `MASTER_ADDR` has to be set to this specific pattern.
 export MASTER_ADDR="ic-${SLURMD_NODENAME}"
-
+module load python/3.12.4 cuda/12.6 gcc
 exec bash scripts/safe_job.sh "$@"
