@@ -1,0 +1,25 @@
+# Matched control for pathlap_n_spe_e_spe: identical node-level SPE embedder, only the
+# edge encoder swapped from SparseEdgeSPE to the naive linear one (SparseEdgeLinear).
+model:
+  pe_file_name: pathlap_n_spe_e_naive
+  pe_type: pathlap
+  # invariant_fixed is the code path that feeds the edge spectrum into edge_attr; the
+  # 'naive' encoder itself is basis-variant (a linear map of the raw eigenvectors).
+  pe_strategy: invariant_fixed
+  pe_encoder: naive
+  pat_pe_dim_input: 10
+  pat_pe_dim_output: 10
+  se_pe_dim_input: 0
+  se_pe_dim_output: 0
+
+  # unused by the naive edge encoder; kept so pe_encoder can be flipped back to spe
+  eigval_encoder:
+    in: 1
+    hidden: 32
+    out: 8
+    num_layer: 3
+
+  pe_embedder:
+    name: spe
+    norm: ln # layer norm. Remove it means no normalization
+    k_hops: 2 # number of layers of gnn encoder for node-level spe

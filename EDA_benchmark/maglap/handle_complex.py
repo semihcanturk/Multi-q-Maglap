@@ -240,6 +240,8 @@ class SparseEdgeSPE(torch.nn.Module):
         norm: ``None``, ``"bn"`` or ``"ln"`` inside the MLPs.
     """
 
+    needs_pair_index = True
+
     def __init__(self, pe_dim, out_dim, eigval_dim=16, lambda_index=1, aggr='sum',
                  include_diag=True, include_succ=True, include_pred=True,
                  scale_by_num_edges=False, norm=None):
@@ -302,6 +304,40 @@ class SparseEdgeSPE(torch.nn.Module):
                     pred = pred / g.new_zeros(E, 1).index_add_(0, f, ones).clamp_(min=1)
                 feats.append(pred)
         return self.readout(torch.cat(feats, dim=-1))
+
+
+class SparseEdgeLinear(torch.nn.Module):
+    """Naive counterpart of :class:`SparseEdgeSPE` for *edge-level* eigenvectors.
+
+    Maps the raw eigenvectors of the p=1 path Hodge Laplacian to edge features with a
+    single linear layer -- the edge-level analogue of ``NaivePEEmbedder``. It uses no
+    eigenvalue encoder and no 2-path kernel, so it is *not* invariant to sign flips or
+    to a change of basis inside an eigenspace: it is the baseline that separates the
+    contribution of basis invariance from that of the spectrum itself.
+
+    Args:
+        pe_dim: Number of eigenpairs ``k`` per graph.
+        out_dim: Output feature dimension per edge.
+    """
+
+    needs_pair_index = False
+
+    def __init__(self, pe_dim, out_dim):
+        super().__init__()
+        self.pe_dim = pe_dim
+        self.linear = nn.Linear(pe_dim, out_dim)
+
+    def forward(self, pe_edge, Lambda, pair_index, edge_batch):
+        """
+        Args:
+            pe_edge: ``[E, k]`` edge eigenvectors (rows may be zero for padded / self-loop edges).
+            Lambda: unused, kept so this is a drop-in for :class:`SparseEdgeSPE`.
+            pair_index: unused, see ``Lambda``.
+            edge_batch: unused, see ``Lambda``.
+        Returns:
+            ``[E, out_dim]`` edge features.
+        """
+        return self.linear(pe_edge)
 
 
 class DenseComplexNetwork(torch.nn.Module):

@@ -13,7 +13,7 @@ from torch_geometric.utils import to_dense_batch
 
 from models.base_model import BaseModel, MLPs
 from models.pe_encoders import PEEmbedderWrapper
-from maglap.handle_complex import ComplexHandler, SparseComplexNetwork, DenseComplexNetwork, SparseEdgeSPE
+from maglap.handle_complex import ComplexHandler, SparseComplexNetwork, DenseComplexNetwork, SparseEdgeSPE, SparseEdgeLinear
 from maglap.get_path_lap import build_two_path_index
 
 class RedrawProjection:
@@ -100,9 +100,13 @@ class MiddleModel(torch.nn.Module):
                 if self.pe_type == 'pathlap':
                     # genuine edge-indexed (p=1 path-Hodge-Laplacian) eigenvectors, not the
                     # node-PE-gram-over-edge_index features SparseComplexNetwork computes.
-                    norm = args['pe_embedder'].get('norm') if args.get('pe_embedder') is not None else None
-                    self.edge_pe_net = SparseEdgeSPE(pe_dim=pe_dim, out_dim=desired_pe_edge_dim,
-                                                      eigval_dim=args['eigval_encoder']['out'], norm=norm)
+                    if args.get('pe_encoder') == 'naive':
+                        # basis-variant baseline: a linear map of the raw edge eigenvectors
+                        self.edge_pe_net = SparseEdgeLinear(pe_dim=pe_dim, out_dim=desired_pe_edge_dim)
+                    else:
+                        norm = args['pe_embedder'].get('norm') if args.get('pe_embedder') is not None else None
+                        self.edge_pe_net = SparseEdgeSPE(pe_dim=pe_dim, out_dim=desired_pe_edge_dim,
+                                                          eigval_dim=args['eigval_encoder']['out'], norm=norm)
                 else:
                     self.sparse_pe_net = SparseComplexNetwork(pe_dim, q_dim, self.pe_type, desired_pe_edge_dim,
                                                               network_type=args['pe_encoder'])
@@ -167,7 +171,8 @@ class MiddleModel(torch.nn.Module):
             # a genuinely separate edge spectrum per graph structure this stage runs
             # message passing over (see pathlap_stage docstring in __init__).
             suffix = '_sub' if self.pathlap_stage == 'sub' else ''
-            pair_index = build_two_path_index(edge_index, x.size(0))
+            pair_index = (build_two_path_index(edge_index, x.size(0))
+                          if self.edge_pe_net.needs_pair_index else None)
             edge_batch = batch[edge_index[0]]
             edge_pe = self.edge_pe_net(kwargs['pat_edge_pe' + suffix], kwargs['Lambda' + suffix],
                                         pair_index, edge_batch)
