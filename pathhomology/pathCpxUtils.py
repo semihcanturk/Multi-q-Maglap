@@ -9,7 +9,7 @@ import numpy as np
 import scipy.sparse as sp
 import networkx as nx
 from scipy.linalg import null_space
-from scipy.sparse.linalg import svds, splu, ArpackError
+from scipy.sparse.linalg import svds, splu
 from scipy.sparse import (csc_matrix, csr_matrix, issparse, coo_matrix, spmatrix,
                           spdiags,csr_matrix, csr_array)
 
@@ -234,139 +234,70 @@ def boundary_split_fast(allPaths, indA_sorted, p, n):
 # 3) Omega + bdry construction
 # ---------------------------
 
-def has_one_nnz_per_col(B: sp.spmatrix) -> bool:
-    """True if every column of ``B`` carries at most one nonzero.
+from scipy.sparse.linalg import ArpackError
 
-    Always holds for the disallowed boundary block at p=2, which is the only
-    block ``omega_and_bdry`` builds when ``pmax=2``. A 2-path (v0,v1,v2) has
-    faces (v1,v2), (v0,v2), (v0,v1); ``all_paths_csr`` builds it by extending
-    the 1-path (v0,v1) along an edge v1->v2, so the outer two faces are edges by
-    construction and only the interior face (v0,v2) can be disallowed.
-    """
-    Bc = B.tocsc(copy=True)
-    Bc.eliminate_zeros()
-    counts = np.diff(Bc.indptr)
-    return bool(counts.size == 0 or counts.max() <= 1)
-
-
-def nullspace_one_nnz_per_col(B: sp.spmatrix) -> csr_matrix:
-    """Exact orthonormal kernel of a matrix with at most one nonzero per column.
-
-    Such a matrix decouples completely. Column j is either zero -- so ``e_j``
-    spans a kernel direction -- or hits exactly one row r. The columns sharing
-    row r, with coefficients c, are constrained only by ``c . x = 0``; that
-    sum-zero subspace has dimension ``|group| - 1`` and an orthonormal basis
-    given by the trailing Householder columns of ``c/||c||``. A group of size 1
-    pins its column to zero and contributes nothing. Distinct groups occupy
-    disjoint coordinates, so cross-group orthogonality is automatic.
-
-    O(nnz) time and a *sparse* result, against the dense SVD's O(m n min(m,n))
-    and O(max(m,n)^2) memory -- on directed_roman_empire the same subspace is
-    14k nonzeros instead of a 6.2 GB dense array, which is also what puts it
-    out of reach of ``scipy.linalg.null_space`` (LAPACK indexes with int32 and
-    would need a 67133 x 67133 factor).
-
-    Raises:
-        ValueError: if some column has more than one nonzero.
-    """
-    Bc = B.tocsc(copy=True)
-    Bc.eliminate_zeros()
-    m, n = Bc.shape
-    counts = np.diff(Bc.indptr)
-    if counts.size and counts.max() > 1:
-        raise ValueError(
-            "nullspace_one_nnz_per_col requires at most one nonzero per column; "
-            f"found a column with {counts.max()}."
-        )
-
-    nz_cols = np.nonzero(counts == 1)[0]
-    zero_cols = np.nonzero(counts == 0)[0]
-
-    # Zero columns contribute e_j, already orthonormal.
-    data = [np.ones(zero_cols.size)]
-    rows = [zero_cols]
-    cols = [np.arange(zero_cols.size)]
-    next_col = zero_cols.size
-
-    if nz_cols.size:
-        order = np.argsort(Bc.indices, kind="stable")
-        r_sorted = Bc.indices[order]
-        c_sorted = nz_cols[order]
-        v_sorted = Bc.data[order]
-        starts = np.flatnonzero(np.r_[True, r_sorted[1:] != r_sorted[:-1]])
-        sizes = np.diff(np.r_[starts, r_sorted.size])
-        # Only groups of size >= 2 contribute. On sparse graphs nearly every
-        # group is a singleton, so filtering first keeps this off a Python-level
-        # loop over essentially every row of the matrix.
-        for s, g in zip(starts[sizes >= 2], sizes[sizes >= 2]):
-            grp = c_sorted[s:s + g]
-            u = v_sorted[s:s + g].astype(float)
-            u /= np.linalg.norm(u)
-            w = u.copy()
-            w[0] += 1.0 if u[0] >= 0 else -1.0
-            w /= np.linalg.norm(w)
-            # H = I - 2 w w^T is orthogonal with H e_0 proportional to u, so its
-            # remaining columns are an orthonormal basis of u-perp.
-            block = -2.0 * np.outer(w, w[1:])
-            block[np.arange(1, g), np.arange(g - 1)] += 1.0
-            data.append(block.ravel(order="F"))
-            rows.append(np.tile(grp, g - 1))
-            cols.append(np.repeat(np.arange(next_col, next_col + g - 1), g))
-            next_col += g - 1
-
-    return csr_matrix(
-        (np.concatenate(data), (np.concatenate(rows), np.concatenate(cols))),
-        shape=(n, next_col),
-    )
 
 def nullspace_numeric(
     B: sp.spmatrix,
     tol: float = 1e-12,
-    max_dense: int = 2000
+    max_dense: int = 2000,
 ) -> np.ndarray:
+    """
+    Compute an orthonormal basis of ker(B).
+
+    Notes
+    -----
+    For large sparse matrices this routine uses ``svds`` only in cases where
+    the compact SVD can contain the full right nullspace.  In particular, a
+    large *wide* matrix (n_columns > n_rows) has at least n_columns-n_rows
+    right-null directions that are not returned by the compact SVD.  The old
+    implementation silently missed those directions.  We now fail loudly in
+    that case instead of returning an incorrect kernel.
+
+    Path-complex computations with q=2 do not use this routine: their kernel
+    is constructed exactly by :func:`omega2_basis_exact` below.
+    """
+    B = B.tocsr()
     m, n = B.shape
 
-    # No columns: trivial domain.
+    # Trivial domain.
     if n == 0:
         return np.zeros((0, 0), dtype=float)
 
-    # No rows: every vector is in the kernel.
-    if m == 0:
+    # Zero map: every vector lies in the kernel.
+    if m == 0 or B.nnz == 0:
         return np.eye(n, dtype=float)
 
-    # Exact closed form; always applies at pmax=2. Preferred at every size: it
-    # is O(nnz) rather than O(n^3) and returns a sparse basis.
-    if has_one_nnz_per_col(B):
-       return nullspace_one_nnz_per_col(B)
-
-    # Dense computation for moderate-sized matrices.
+    # Dense computation is reliable for moderate sizes.
     if m <= max_dense and n <= max_dense:
         return null_space(B.toarray(), rcond=tol)
 
-    min_dim = min(m, n)
-    k_try = min(max(1, min_dim - 1), 50)
+    # For a large wide matrix, the compact SVD omits the n-m right-null
+    # directions.  Returning vt[s <= tol].T is therefore mathematically wrong.
+    if n > m:
+        raise RuntimeError(
+            "nullspace_numeric cannot recover the full right nullspace of a "
+            f"large wide sparse matrix with shape {B.shape} using scipy.svds. "
+            "Use a structure-aware kernel construction instead."
+        )
 
-    # Give ARPACK a larger Krylov subspace whenever possible.
-    ncv = min(
-        min_dim - 1,
-        max(4 * k_try + 1, 20),
-    )
+    min_dim = min(m, n)
+
+    # svds requires k < min(B.shape).  Handle the one-column case directly.
+    if min_dim == 1:
+        col_norm = np.sqrt(B.multiply(B).sum())
+        if col_norm <= tol:
+            return np.eye(n, dtype=float)
+        return np.zeros((n, 0), dtype=float)
+
+    k_try = min(min_dim - 1, 50)
+    ncv = min(min_dim - 1, max(4 * k_try + 1, 20))
 
     try:
         if ncv > k_try:
-            _, s, vt = svds(
-                B,
-                k=k_try,
-                which="SM",
-                ncv=ncv,
-            )
+            _, s, vt = svds(B, k=k_try, which="SM", ncv=ncv)
         else:
-            _, s, vt = svds(
-                B,
-                k=k_try,
-                which="SM",
-            )
-
+            _, s, vt = svds(B, k=k_try, which="SM")
     except ArpackError:
         print(
             "\nARPACK failure in nullspace_numeric:"
@@ -383,7 +314,133 @@ def nullspace_numeric(
     if not np.any(keep):
         return np.zeros((n, 0), dtype=float)
 
+    # If every requested singular triplet is numerically zero, there may be
+    # still more null directions outside the k_try vectors we requested.
+    # Returning a partial basis would silently corrupt the path Laplacian.
+    if np.all(keep):
+        raise RuntimeError(
+            "nullspace_numeric found at least "
+            f"{k_try} null directions for B.shape={B.shape}, but cannot certify "
+            "that this is the complete nullspace with the current svds call."
+        )
+
     return vt[keep].T
+
+
+def omega2_basis_exact(
+    Bd_disallowed: sp.spmatrix,
+    *,
+    check_structure: bool = True,
+) -> csr_matrix:
+    """
+    Construct an exact sparse orthonormal basis of Omega_2.
+
+    For an allowed directed 2-path (v0,v1,v2), the first and last faces
+    (v1,v2) and (v0,v1) are automatically allowed.  Hence the only possibly
+    disallowed face is the middle face (v0,v2), with sign -1.  Therefore each
+    column of the disallowed boundary has at most one nonzero entry.
+
+    The kernel then decomposes into independent blocks:
+      * every zero column contributes one standard basis vector;
+      * a row supported on r columns contributes an (r-1)-dimensional
+        zero-sum subspace.
+
+    We use the orthonormal Helmert basis for each row block.  When r=2 this is
+    simply (e_i - e_j)/sqrt(2).
+
+    Parameters
+    ----------
+    Bd_disallowed : sparse matrix, shape (n_disallowed_faces, n_allowed_2paths)
+        Disallowed part of the p=2 boundary.
+    check_structure : bool
+        If True, verify the p=2 structural assumptions before constructing the
+        basis.
+
+    Returns
+    -------
+    Omega2 : csr_matrix, shape (n_allowed_2paths, dim(Omega_2))
+        Sparse matrix whose columns are an orthonormal basis of ker(Bd_disallowed).
+    """
+    D = Bd_disallowed.tocsr()
+    m, ncols = D.shape
+
+    if ncols == 0:
+        return csr_matrix((0, 0), dtype=float)
+
+    if m == 0:
+        return sp.identity(ncols, dtype=float, format="csr")
+
+    D_csc = D.tocsc()
+    col_nnz = np.diff(D_csc.indptr)
+
+    if check_structure and np.any(col_nnz > 1):
+        bad = int(np.count_nonzero(col_nnz > 1))
+        raise ValueError(
+            "omega2_basis_exact expects the p=2 disallowed boundary, where "
+            f"each column has at most one nonzero; found {bad} columns with >1."
+        )
+
+    zero_cols = np.flatnonzero(col_nnz == 0)
+    row_nnz = np.diff(D.indptr)
+    omega_dim = int(zero_cols.size + np.maximum(row_nnz - 1, 0).sum())
+
+    rows = []
+    cols = []
+    vals = []
+    basis_col = 0
+
+    # Zero columns of D are themselves kernel basis vectors.
+    if zero_cols.size:
+        rows.extend(zero_cols.tolist())
+        cols.extend(range(basis_col, basis_col + zero_cols.size))
+        vals.extend([1.0] * zero_cols.size)
+        basis_col += int(zero_cols.size)
+
+    # Each nonempty row has support disjoint from every other row support.
+    # On a block of size r, construct an orthonormal basis of the zero-sum
+    # hyperplane using Helmert vectors.
+    for r in np.flatnonzero(row_nnz >= 2):
+        start, end = D.indptr[r], D.indptr[r + 1]
+        js = D.indices[start:end]
+        ds = D.data[start:end]
+        block_size = js.size
+
+        if check_structure:
+            # At p=2 all disallowed entries arise from deleting the middle
+            # vertex, so they must carry the same coefficient (-1).
+            if not np.allclose(ds, ds[0], rtol=0.0, atol=1e-14):
+                raise ValueError(
+                    "omega2_basis_exact expected equal coefficients within "
+                    f"row {r}, got {ds}."
+                )
+
+        # Helmert basis: for j=1,...,r-1, put
+        #   1/sqrt(j(j+1)) on the first j entries and
+        #   -j/sqrt(j(j+1)) on entry j+1.
+        for j in range(1, block_size):
+            scale = 1.0 / np.sqrt(j * (j + 1.0))
+
+            rows.extend(js[:j].tolist())
+            cols.extend([basis_col] * j)
+            vals.extend([scale] * j)
+
+            rows.append(int(js[j]))
+            cols.append(basis_col)
+            vals.append(-j * scale)
+
+            basis_col += 1
+
+    if basis_col != omega_dim:
+        raise RuntimeError(
+            f"Internal Omega_2 dimension mismatch: built {basis_col}, "
+            f"expected {omega_dim}."
+        )
+
+    return sp.coo_matrix(
+        (np.asarray(vals, dtype=float),
+         (np.asarray(rows, dtype=np.int64), np.asarray(cols, dtype=np.int64))),
+        shape=(ncols, omega_dim),
+    ).tocsr()
 
 
 def omega_and_bdry(
@@ -391,45 +448,59 @@ def omega_and_bdry(
     indA_sorted: list[np.ndarray],
     qmax: int,
     n: int,
-    tol: float = 1e-12
+    tol: float = 1e-12,
 ):
     """
-    Compute omega[p] and boundary operators bdry[p] in omega-coordinates or p = 0..qmax only.
-    bdry[p] has shape (dim omega[p-1], dim omega[p]) and is stored as sparse CSR.
+    Compute omega[p] and boundary operators bdry[p] for p=0..qmax.
 
-    Notes:
-    - To compute Laplacian L_p you need bdry[p] and bdry[p+1],
-      so choose qmax = max(p_list) + 1.
+    ``bdry[p]`` has shape (dim Omega_{p-1}, dim Omega_p) and is stored as
+    sparse CSR.
+
+    For q=2 we exploit the special directed-path structure and build Omega_2
+    exactly, avoiding a numerical sparse SVD altogether.
+
+    Notes
+    -----
+    To compute L_p one needs bdry[p] and bdry[p+1], so choose
+    qmax = max(p_list) + 1.
     """
     if qmax < 0:
         raise ValueError("qmax must be >= 0")
     if qmax >= len(allPaths):
         raise ValueError(f"Need allPaths up to {qmax}, but len(allPaths)={len(allPaths)}")
     if qmax >= len(indA_sorted):
-        raise ValueError(f"Need indA_sorted up to {qmax}, but len(indA_sorted)={len(indA_sorted)}")
+        raise ValueError(
+            f"Need indA_sorted up to {qmax}, but len(indA_sorted)={len(indA_sorted)}"
+        )
 
     omega: list = [None] * (qmax + 1)
-    bdry:  list[csr_matrix] = [None] * (qmax + 1)
+    bdry: list[csr_matrix] = [None] * (qmax + 1)
 
-    # q=0: every 0-path is invariant, so omega[0] is the identity. Keep it
-    # sparse — a dense eye(#nodes) costs O(n^2) memory and turns the products
-    # below into huge no-op GEMMs (e.g. 3.8 GiB / 40 TFLOP for n=22662).
+    # q=0: every vertex is invariant.  Keep the identity sparse.
     m0 = allPaths[0].shape[0]
     omega[0] = sp.identity(m0, dtype=float, format="csr")
     bdry[0] = csr_matrix((0, m0))
 
     for q in range(1, qmax + 1):
-        Bd_allowed, Bd_disallowed = boundary_split_fast(allPaths, indA_sorted, q, n)
+        Bd_allowed, Bd_disallowed = boundary_split_fast(
+            allPaths, indA_sorted, q, n
+        )
 
         if Bd_disallowed.shape[0] == 0:
-            # No disallowed faces => the kernel is everything. Same result as
-            # nullspace_numeric (which returns eye(n) here), but sparse and free.
-            omega_q = sp.identity(Bd_allowed.shape[1], dtype=float, format="csr")
+            # No disallowed faces: Omega_q is the full allowed path space.
+            omega_q = sp.identity(
+                Bd_allowed.shape[1], dtype=float, format="csr"
+            )
+        elif q == 2:
+            # Exact and sparse; no SVD/ARPACK.
+            omega_q = omega2_basis_exact(Bd_disallowed)
         else:
+            # Generic fallback.  It now fails loudly rather than silently
+            # returning an incomplete nullspace in unsupported sparse cases.
             omega_q = nullspace_numeric(Bd_disallowed, tol=tol)
+
         omega[q] = omega_q
 
-        # sparse @ sparse -> sparse; sparse @ dense -> dense (#allowed_{q-1} x k_q)
         Btilde = Bd_allowed @ omega_q
 
         omega_prev = omega[q - 1]
