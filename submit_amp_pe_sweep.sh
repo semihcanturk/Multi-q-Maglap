@@ -28,6 +28,10 @@ pe_configs=(
   "maglap_10q001_n_spe_e_spe:maglap10/maglap_10q001_n_spe_e_spe"
   "maglap_10q_n_spe_e_spe:maglap10/maglap_10q_n_spe_e_spe"
   "pathlap_n_spe_e_spe:pathlap10/pathlap_n_spe_e_spe"
+  # naive (linear) edge encoder: matched control for pathlap_n_spe_e_spe, plus the
+  # edge-PE-only variant (no node-level SPE embedder).
+  "pathlap_n_spe_e_naive:pathlap10/pathlap_n_spe_e_naive"
+  "pathlap_e_naive:pathlap10/pathlap_e_naive"
 )
 
 num_jobs=0
