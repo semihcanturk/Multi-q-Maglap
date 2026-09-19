@@ -15,9 +15,6 @@ pwd
 
 module load python/3.12.4 cuda/12.6 gcc
 
-cp -r /home/semiki/projects/aip-wolfg/semiki/Multi-q-Maglap $SLURM_TMPDIR
-cd $SLURM_TMPDIR/Multi-q-Maglap
-
 source .venv/bin/activate
 
 echo $@
