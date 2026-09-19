@@ -10,6 +10,7 @@ from torch_geometric.nn.attention import PerformerAttention
 from torch_geometric_signed_directed.nn import MSConv
 from torch_geometric_signed_directed.nn.directed.complex_relu import complex_relu_layer
 
+from models.dirgcne_conv import DirEdgeGatedEncoder
 from models.gps_conv import GPSConv_custom
 #from models.mamba.mamba import MAMBAConv
 
@@ -123,6 +124,8 @@ class BaseModel(torch.nn.Module):
             self.conv = GPSConv_custom(self.hidden_dim,
                             gin_conv(nn),
                             heads=4, attn_type='multihead', attn_kwargs = {'dropout': self.dropout})
+        elif self.base_model == 'BiGCNE':
+            self.conv = DirEdgeGatedEncoder(int(self.hidden_dim), int(self.hidden_dim), int(self.hidden_dim))
 
     def forward(self, x, edge_index, batch, **kwargs):
         if self.base_model in ['GINE', 'DIGINE']:
@@ -177,6 +180,11 @@ class BaseModel(torch.nn.Module):
                 x = self.conv(x = x, edge_index = edge_index, batch = batch)
             else:
                 x = self.conv(x = x, edge_index = edge_index, batch = batch, edge_attr = kwargs.get('edge_attr'))
+        elif self.base_model == 'BiGCNE':
+            if kwargs.get('edge_attr') is None:
+                raise ValueError('BiGCNE model requires edge_attr')
+            else:
+                x = self.conv(x = x, edge_index = edge_index, edge_attr = kwargs.get('edge_attr'))
         return x
     
 
