@@ -24,7 +24,7 @@ train:
     gamma: 0.95
   lr : 0.0067
   criterion: MSE
-  wandb: 1
+  wandb: 0
   train_files: './train_files/'
   directed: 0
 
