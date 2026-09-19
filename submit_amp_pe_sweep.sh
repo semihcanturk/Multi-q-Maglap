@@ -16,11 +16,11 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p logs
 
-model_config=bigine_10q001
+model_config=bigat_10q001
 device=0
 seeds=(121 122 123 124 125)
 targets=(bw gain pm)
-train_stage_nums=(2 3)
+train_stage_nums=(3)
 
 # "job-name-suffix:pe_config path (relative to EDA_benchmark/configs/pe/)"
 pe_configs=(
@@ -31,7 +31,6 @@ pe_configs=(
   # naive (linear) edge encoder: matched control for pathlap_n_spe_e_spe, plus the
   # edge-PE-only variant (no node-level SPE embedder).
   "pathlap_n_spe_e_naive:pathlap10/pathlap_n_spe_e_naive"
-  "pathlap_e_naive:pathlap10/pathlap_e_naive"
 )
 
 num_jobs=0

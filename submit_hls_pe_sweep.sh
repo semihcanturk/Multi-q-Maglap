@@ -17,10 +17,10 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p logs
 
-model_config=bigine_maglap_n_5q_spe_001
+model_config=bigat_maglap_n_5q_spe_001
 device=0
 seeds=(121 122 123 124 125)
-targets=(dsp lut)
+targets=(dsp lut cp)
 
 # "job-name-suffix:pe_config path (relative to EDA_benchmark/configs/pe/)"
 pe_configs=(
@@ -31,7 +31,6 @@ pe_configs=(
   # naive (linear) edge encoder: matched control for pathlap_n_spe_e_spe, plus the
   # edge-PE-only variant (no node-level SPE embedder).
   "pathlap_n_spe_e_naive:pathlap10/pathlap_n_spe_e_naive"
-  "pathlap_e_naive:pathlap10/pathlap_e_naive"
 )
 
 num_jobs=0
