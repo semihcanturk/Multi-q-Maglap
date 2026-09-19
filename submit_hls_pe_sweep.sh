@@ -25,8 +25,8 @@ targets=(dsp lut cp)
 # "job-name-suffix:pe_config path (relative to EDA_benchmark/configs/pe/)"
 pe_configs=(
   "lap_n_spe_e_spe:lap10/lap_n_spe_e_spe"
-  "maglap_10q001_n_spe_e_spe:maglap10/maglap_10q001_n_spe_e_spe"
-  "maglap_10q_n_spe_e_spe:maglap10/maglap_10q_n_spe_e_spe"
+  "maglap_10q001_n_spe_e_spe:maglap10/maglap_5q001_n_spe_e_spe"
+  "maglap_10q_n_spe_e_spe:maglap10/maglap_5q_n_spe_e_spe"
   "pathlap_n_spe_e_spe:pathlap10/pathlap_n_spe_e_spe"
   # naive (linear) edge encoder: matched control for pathlap_n_spe_e_spe, plus the
   # edge-PE-only variant (no node-level SPE embedder).
