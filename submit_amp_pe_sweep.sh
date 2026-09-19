@@ -48,7 +48,7 @@ for entry in "${pe_configs[@]}"; do
       job_name="amp_${target}_${pe_name}_stage${stage}"
       echo "Submitting ${job_name}"
       echo "  ${cmd}"
-      sbatch --job-name="${job_name}" --output="logs/${job_name}_%j.out" wrapper.sb "${cmd}"
+      sbatch --account=def-wolfg --job-name="${job_name}" --output="logs/${job_name}_%j.out" wrapper.sb "${cmd}"
       num_jobs=$((num_jobs + 1))
     done
   done
