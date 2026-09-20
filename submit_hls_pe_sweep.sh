@@ -17,7 +17,7 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p logs
 
-model_config=bigat_maglap_n_5q_spe_001
+model_config=gat_maglap_n_5q_spe_001
 device=0
 seeds=(121 122 123 124 125)
 targets=(dsp lut cp)

@@ -16,7 +16,7 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p logs
 
-model_config=bigat_10q001
+model_config=gat_10q001
 device=0
 seeds=(121 122 123 124 125)
 targets=(bw gain pm)
