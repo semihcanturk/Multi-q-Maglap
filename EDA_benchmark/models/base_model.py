@@ -12,6 +12,7 @@ from torch_geometric_signed_directed.nn.directed.complex_relu import complex_rel
 
 from models.dirgcne_conv import DirEdgeGatedEncoder
 from models.gps_conv import GPSConv_custom
+from models.sat_conv import SATConv
 #from models.mamba.mamba import MAMBAConv
 
 
@@ -126,6 +127,10 @@ class BaseModel(torch.nn.Module):
                             heads=4, attn_type='multihead', attn_kwargs = {'dropout': self.dropout})
         elif self.base_model == 'BiGCNE':
             self.conv = DirEdgeGatedEncoder(int(self.hidden_dim), int(self.hidden_dim), int(self.hidden_dim))
+        elif self.base_model == 'SAT':
+            # inner_gnn is the structure-extractor kernel: GIN/GINE (undirected) or BIGIN/BIGINE
+            self.conv = SATConv(self.hidden_dim, inner_gnn = kwargs['inner_gnn'], k_hop = kwargs['k_hop'],
+                                num_heads = kwargs['num_heads'], dropout = self.dropout)
 
     def forward(self, x, edge_index, batch, **kwargs):
         if self.base_model in ['GINE', 'DIGINE']:
@@ -185,6 +190,8 @@ class BaseModel(torch.nn.Module):
                 raise ValueError('BiGCNE model requires edge_attr')
             else:
                 x = self.conv(x = x, edge_index = edge_index, edge_attr = kwargs.get('edge_attr'))
+        elif self.base_model == 'SAT':
+            x = self.conv(x, edge_index, batch, edge_attr = kwargs.get('edge_attr'))
         return x
     
 

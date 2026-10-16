@@ -18,11 +18,13 @@ from models.middle_model import MiddleModel
 
 class NodeEncoder(torch.nn.Module):
     def __init__(self, emb_dim):
+        # emb_dim: one embedding size shared by all node features, or a list of per-feature sizes
         super(NodeEncoder, self).__init__()
         self.node_embedding_list = torch.nn.ModuleList()
         feature_dim_list = [4, 257, 8, 57, 3, 3, 258]
-        for dim in feature_dim_list:
-            emb = torch.nn.Embedding(dim, emb_dim)
+        emb_dim_list = emb_dim if isinstance(emb_dim, list) else [emb_dim] * len(feature_dim_list)
+        for dim, feature_emb_dim in zip(feature_dim_list, emb_dim_list):
+            emb = torch.nn.Embedding(dim, feature_emb_dim)
             torch.nn.init.xavier_uniform_(emb.weight.data)
             self.node_embedding_list.append(emb)
     def forward(self, x):
@@ -56,7 +58,9 @@ class HLSModel(nn.Module):
         self.args = args
         self.pe_type = args.get('pe_type')
         # define node, edge encoder
-        node_emb_dim = args['hidden_dim'] // 7
+        # per-feature sizes summing to exactly hidden_dim, which need not be a multiple of the
+        # 7 node features (the paper's SAT hidden dims 78 and 62 are not)
+        node_emb_dim = [args['hidden_dim'] // 7 + (i < args['hidden_dim'] % 7) for i in range(7)]
         #if self.pe_type is not None and args['pe_strategy'] == 'variant':
         if self.pe_type is not None and args.get('pe_embedder') is not None:
             pe_dim_output = args[self.pe_type[:3]+'_pe_dim_output']

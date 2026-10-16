@@ -32,7 +32,11 @@ class HLSRunner():
     def __init__(self, config):
         self.config = config
         self.task = config['task']
-        self.train_folder = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+'/'+str(config['model']['name'])+'/'
+        # models that share one name across kernels (SAT, GPS) are told apart by inner_gnn
+        model_tag = str(config['model']['name'])
+        if config['model'].get('inner_gnn') is not None:
+            model_tag += '_' + str(config['model']['inner_gnn'])
+        self.train_folder = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+'/'+model_tag+'/'
         # one file per seed (not shared/overwritten across seeds) so a sweep's 5 runs
         # can be aggregated afterwards -- see aggregate_seed_results.py.
         self.result_csv = self.train_folder+'result_seed'+str(config['utils']['seed'])+'.csv'

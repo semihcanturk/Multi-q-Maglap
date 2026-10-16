@@ -37,7 +37,11 @@ class AMPRunner():
         # pe/target/model combo are independent SLURM jobs that can run concurrently,
         # and would otherwise clobber each other's checkpoints/result.csv.
         stage_suffix = '_stage' + str(config['task']['train_stage_num'])
-        self.train_folder = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+stage_suffix+'/'+str(config['model']['name'])+'/'
+        # models that share one name across kernels (SAT, GPS) are told apart by inner_gnn
+        self.model_tag = str(config['model']['name'])
+        if config['model'].get('inner_gnn') is not None:
+            self.model_tag += '_' + str(config['model']['inner_gnn'])
+        self.train_folder = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+stage_suffix+'/'+self.model_tag+'/'
         # one file per seed (not shared/overwritten across seeds) so a sweep's 5 runs
         # can be aggregated afterwards -- see aggregate_seed_results.py.
         self.result_csv = self.train_folder+'result_seed'+str(config['utils']['seed'])+'.csv'
@@ -378,7 +382,7 @@ class AMPRunner():
     def init_wandb(self):
         if self.config['train']['wandb'] == 1:
             wandb.init(project='EDA_benchmark', config=self.config,
-                       name = self.config['task']['name']+'_'+str(self.config['task']['type'])+'_'+self.config['task']['target']+'_'+self.config['model']['name']
+                       name = self.config['task']['name']+'_'+str(self.config['task']['type'])+'_'+self.config['task']['target']+'_'+self.model_tag
                        +'_'+str(self.config['model'].get('pe_file_name'))+'_stage'+str(self.config['task']['train_stage_num']))
     def save_model(self, valid_metric, epoch_idx):
         if valid_metric < self.best_valid_metric:

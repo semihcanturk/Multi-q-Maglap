@@ -53,20 +53,25 @@ class MiddleModel(torch.nn.Module):
         self.dropout = args['dropout']
         self.hidden_dim = args['hidden_dim']
         self.inner_gnn = args.get('inner_gnn')
-        
-        
+        # SAT only: structure-extractor hops and attention heads per layer
+        self.k_hop = args.get('k_hop')
+        self.num_heads = args.get('num_heads')
+
+
         # allocate base model convs
         self.convs = ModuleList()
         for i in range(self.num_layers):
             #if (self.pe_type is None) or (self.pe_strategy in ['invariant_fixed', 'invariant_learnable']):
             if args.get('pe_embedder') is None:
                 # the case where node features are from raw node attributes
-                conv = BaseModel(base_model = self.base_model_name, hidden_dim = self.hidden_dim, dropout = self.dropout, inner_gnn = self.inner_gnn)
+                conv = BaseModel(base_model = self.base_model_name, hidden_dim = self.hidden_dim, dropout = self.dropout, inner_gnn = self.inner_gnn,
+                                 k_hop = self.k_hop, num_heads = self.num_heads)
             #elif args.get('pe_embedder') is not None:
             else:
                 # the case where node features are from both raw node attributes and pe embedder
                 self.pe_output_dim = args.get(self.pe_type[:3]+'_pe_dim_output')
-                conv = BaseModel(base_model = self.base_model_name, hidden_dim = self.hidden_dim+self.pe_output_dim, dropout = self.dropout, inner_gnn = self.inner_gnn)
+                conv = BaseModel(base_model = self.base_model_name, hidden_dim = self.hidden_dim+self.pe_output_dim, dropout = self.dropout, inner_gnn = self.inner_gnn,
+                                 k_hop = self.k_hop, num_heads = self.num_heads)
             self.convs.append(conv)
         if self.base_model_name in ['GPS','GPSSE']:
             self.redraw_projection = RedrawProjection(self.convs, redraw_interval=None)
