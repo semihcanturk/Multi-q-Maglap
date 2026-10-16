@@ -5,6 +5,9 @@
 #SBATCH --cpus-per-task=14
 #SBATCH --mem-per-gpu=64G
 
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+
 # Run the job command passed as an argument when submitting the job ('python main.py' for example)
 echo "Running command: $@"
 srun uv run "$@"

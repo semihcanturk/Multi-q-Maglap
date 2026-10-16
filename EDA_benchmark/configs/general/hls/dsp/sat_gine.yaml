@@ -1,0 +1,57 @@
+# SAT, structure extractor GINE (undirected GIN with edge features), HLS / DSP.
+# Hyperparameters from the paper's table "Hyperparameter for SAT (each layer uses
+# undirected GIN as kernel) on High-level Synthetic dataset" (arXiv:2407.20912, App. B):
+# 3-layer SAT, 2-hop extractor, hidden 98, batch 64, lr 0.004,
+# dropout 0.1, 400 epochs, multi-q = (1/100, ..., 5/100).
+# (That table lists this column as "bidi. GIN"; read as undirected, per its caption.)
+# The paper pools HLS graphs by mean; HLSModel sums (global_add_pool) for dsp/lut.
+# Not in the paper, so set here: num_heads 2 (the largest head count dividing both
+# hidden_dim and hidden_dim + 10, its width once a node PE is concatenated), a
+# 3-layer output MLP, and the StepLR schedule of the GIN configs.
+#
+# HLS graphs have edge features, so this one config serves No PE (no --pe_config)
+# and every PE config. Paper PEs for this target: lap10/lap_gnn, lap10/lap_n_spe,
+# maglap10/maglap_5q001_gnn, maglap10/maglap_5q001_n_spe (node-level SPE only on HLS).
+# run_hls_sat.sh also runs node+edge SPE (lap10/lap_n_spe_e_spe,
+# maglap10/maglap_5q001_n_spe_e_spe), as the GINE/BIGINE HLS sweeps do.
+
+utils:
+  seed: 123
+  torch_num_threads: 10
+
+task:
+  name: 'HLS'
+  type: cdfg # type: cdfg or dfg
+  target: dsp # different target prediction
+  processed_folder: './data_processed/'
+  divide_seed: default #set as default or a seed
+  raw_data_path: './data_raw/HLS/'
+  data_processor: HLSDataProcessor
+
+train:
+  batch_size: 64
+  epoch: 400
+  optimizer: Adam
+  scheduler:
+    name: StepLR
+    step_size: 100
+    gamma: 0.95
+  lr : 0.004
+  criterion: MSE
+  wandb: 0
+  train_files: './train_files/'
+  directed: 0
+
+model:
+  name: SAT
+  inner_gnn: GINE # structure-extractor GNN: GIN | GINE (undirected), BIGIN | BIGINE (bidirected)
+  k_hop: 2 # GNN layers in each SAT layer's structure extractor
+  num_heads: 2
+  hidden_dim: 98
+  num_layers: 3
+  node_input_dim: 7
+  edge_input_dim: 2
+  dropout: 0.1
+  mlp_out:
+    num_layer: 3
+  pe_file_name: no_pe

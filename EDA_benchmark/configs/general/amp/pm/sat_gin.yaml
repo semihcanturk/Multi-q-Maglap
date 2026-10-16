@@ -1,0 +1,56 @@
+# SAT, structure extractor GIN (undirected GIN), AMP / PM.
+# Hyperparameters from the paper's table "Hyperparameter for SAT (each layer uses
+# undirected GIN as kernel) on Open Circuit Benchmark" (arXiv:2407.20912, App. B):
+# 3-layer SAT, 1-hop extractor, hidden 54, batch 64, lr 0.00117,
+# dropout 0.1, 200 epochs, multi-q = (1/100, ..., 10/100).
+# (That table lists this column as "bidi. GIN"; read as undirected, per its caption.)
+# Not in the paper, so set here: num_heads 2 (the largest head count dividing both
+# hidden_dim and hidden_dim + 10, its width once a node PE is concatenated), a
+# 3-layer output MLP, and the StepLR schedule of the GIN configs.
+#
+# AMP graphs have no edge features of their own, so the extractor GIN takes none:
+# use this config for No PE (no --pe_config) and for node-only PEs (SignNet:
+# lap10/lap_gnn, maglap10/maglap_10q001_gnn). Edge-level PEs (*_e_spe, pathlap) go
+# with sat_gine.yaml.
+
+utils:
+  seed: 123
+  torch_num_threads: 10
+
+task:
+  name: 'AMP'
+  type: AMP # type: cdfg or dfg
+  target: pm # different target prediction
+  processed_folder: './data_processed/'
+  divide_seed: default #set as default or a seed
+  raw_data_path: './data_raw/AMP/'
+  data_processor: AMPDataProcessor
+  train_stage_num: 3
+
+train:
+  batch_size: 64
+  epoch: 200
+  optimizer: Adam
+  scheduler:
+    name: StepLR
+    step_size: 100
+    gamma: 0.95
+  lr : 0.00117
+  criterion: MSE
+  wandb: 0
+  train_files: './train_files/'
+  directed: 0
+
+model:
+  name: SAT
+  inner_gnn: GIN # structure-extractor GNN: GIN | GINE (undirected), BIGIN | BIGINE (bidirected)
+  k_hop: 1 # GNN layers in each SAT layer's structure extractor
+  num_heads: 2
+  hidden_dim: 54
+  num_layers: 3
+  node_input_dim: 7
+  edge_input_dim: 2
+  dropout: 0.1
+  mlp_out:
+    num_layer: 3
+  pe_file_name: no_pe
