@@ -31,7 +31,7 @@ mkdir -p logs
 
 account=${ACCOUNT-aip-wolfg}   # set but empty = no --account
 gres=${GRES:-}                 # empty = wrapper.sb's gpu:l40s:1
-walltime=${WALLTIME:-12:00:00} # 5 seeds + aggregation in one job
+walltime=${WALLTIME:-3:00:00} # 5 seeds + aggregation in one job
 cache_wait=${CACHE_WAIT:-5}   # minutes; 0 = no dependencies
 
 device=0
