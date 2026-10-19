@@ -43,7 +43,7 @@ class HLSDataProcessor(InMemoryDataset):
                 k=config['model']['pat_pe_dim_input'], node_attr_name='pat_pe', edge_attr_name='pat_edge_pe',
                 normalize=config['model'].get('pathlap_normalize', True))])
         super().__init__(root = self.save_folder, pre_transform = pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[mode], weights_only=False)
+        self.data, self.slices = torch.load(self.split_paths[mode], weights_only=False)
     @property
     def raw_file_names(self):
         return []
@@ -65,6 +65,13 @@ class HLSDataProcessor(InMemoryDataset):
     
     @property
     def processed_file_names(self):
+        # PyG checks these (as a list) to decide whether to call process(). A dict would be
+        # iterated by key, never found on disk, and every load would then re-run process()
+        # and rewrite pre_transform.pt/pre_filter.pt, which concurrent jobs read.
+        return list(self.split_file_names.values())
+
+    @property
+    def split_file_names(self):
         return {
             'train': 'train_'+str(self.divide_seed)+'.pt',
             'valid': 'val_'+str(self.divide_seed)+'.pt',
@@ -73,14 +80,14 @@ class HLSDataProcessor(InMemoryDataset):
             'test_othertype': 'test_other_type_'+str(self.divide_seed)+'.pt'
         }
     @property
-    def processed_paths(self):
-        return {mode: os.path.join(self.processed_dir, fname) for mode, fname in self.processed_file_names.items()}
+    def split_paths(self):
+        return {mode: os.path.join(self.processed_dir, fname) for mode, fname in self.split_file_names.items()}
     def process(self):
-        file_names = self.processed_file_names
+        file_names = self.split_file_names
         # check if has already created
         exist_flag = 0
-        for key in file_names:        
-            exist_flag = exist_flag + os.path.isfile(self.processed_paths[key])
+        for key in file_names:
+            exist_flag = exist_flag + os.path.isfile(self.split_paths[key])
         if exist_flag == len(file_names):
             print('all datasets already exists, directly load.')
             return
@@ -168,7 +175,7 @@ class HLSDataProcessor(InMemoryDataset):
                                 data['Lambda'] = path_data['Lambda']
                         data_list.append(data)
                 data, slices = self.collate(data_list)
-                torch.save((data, slices), self.processed_paths[key])
+                torch.save((data, slices), self.split_paths[key])
     def read_csv_graph_raw(self, raw_dir, check_repeat_edge):
         label_dir = raw_dir + 'mapping'
         raw_dir = raw_dir + 'raw'

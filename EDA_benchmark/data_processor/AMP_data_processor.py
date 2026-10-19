@@ -53,13 +53,13 @@ class AMPDataProcessor(InMemoryDataset):
                 normalize=config['model'].get('pathlap_normalize', True))])
         super().__init__(root = self.save_folder, pre_transform = pre_transform)
         if mode == 'train':
-            self.data, self.slices = torch.load(self.processed_paths[f'train_{self.train_stage_num}'], weights_only=False)
+            self.data, self.slices = torch.load(self.split_paths[f'train_{self.train_stage_num}'], weights_only=False)
         elif mode == 'valid':
-            self.data, self.slices = torch.load(self.processed_paths[f'valid_{self.train_stage_num}'], weights_only=False)
+            self.data, self.slices = torch.load(self.split_paths[f'valid_{self.train_stage_num}'], weights_only=False)
         elif mode == 'test_id':
-            self.data, self.slices = torch.load(self.processed_paths[f'test_{self.train_stage_num}'], weights_only=False)
+            self.data, self.slices = torch.load(self.split_paths[f'test_{self.train_stage_num}'], weights_only=False)
         elif mode == 'test_ood':
-            self.data, self.slices = torch.load(self.processed_paths[f'ood_{self.train_stage_num}'], weights_only=False)
+            self.data, self.slices = torch.load(self.split_paths[f'ood_{self.train_stage_num}'], weights_only=False)
     @property
     def raw_file_names(self):
         return []
@@ -83,6 +83,13 @@ class AMPDataProcessor(InMemoryDataset):
     
     @property
     def processed_file_names(self):
+        # PyG checks these (as a list) to decide whether to call process(). A dict would be
+        # iterated by key, never found on disk, and every load would then re-run process()
+        # and rewrite pre_transform.pt/pre_filter.pt, which concurrent jobs read.
+        return list(self.split_file_names.values())
+
+    @property
+    def split_file_names(self):
         # Both train_stage_num=2 and train_stage_num=3 splits are cached side by side
         # (same PE-processed graphs, just partitioned differently), so switching which
         # stage is treated as in-distribution never requires recomputing PE features
@@ -95,14 +102,14 @@ class AMPDataProcessor(InMemoryDataset):
             names[f'ood_{stage}'] = f'ood_stage{stage}.pt'
         return names
     @property
-    def processed_paths(self):
-        return {mode: os.path.join(self.processed_dir, fname) for mode, fname in self.processed_file_names.items()}
+    def split_paths(self):
+        return {mode: os.path.join(self.processed_dir, fname) for mode, fname in self.split_file_names.items()}
     def process(self):
-        file_names = self.processed_file_names
+        file_names = self.split_file_names
         # check if has already created
         exist_flag = 0
-        for key in file_names:        
-            exist_flag = exist_flag + os.path.isfile(self.processed_paths[key])
+        for key in file_names:
+            exist_flag = exist_flag + os.path.isfile(self.split_paths[key])
         if exist_flag == len(file_names):
             print('all datasets already exists, directly load.')
             return
@@ -186,7 +193,7 @@ class AMPDataProcessor(InMemoryDataset):
             for stage_num in (2, 3):
                 for key in ('train', 'valid', 'test', 'ood'):
                     coll_data, coll_slices = self.collate(data_lists[stage_num][key])
-                    torch.save((coll_data, coll_slices), self.processed_paths[f'{key}_{stage_num}'])
+                    torch.save((coll_data, coll_slices), self.split_paths[f'{key}_{stage_num}'])
 
     def read_csv_graph_raw(self, raw_dir):
         label_path = osp.join(raw_dir, 'perform101.csv')
