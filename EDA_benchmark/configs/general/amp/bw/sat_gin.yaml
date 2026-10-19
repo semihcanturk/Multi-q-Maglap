@@ -4,6 +4,8 @@
 # 3-layer SAT, 1-hop extractor, hidden 54, batch 256, lr 0.002,
 # dropout 0.3, 200 epochs, multi-q = (1/100, ..., 10/100).
 # (That table lists this column as "bidi. GIN"; read as undirected, per its caption.)
+# Changed from the paper: lr 0.001 instead of 0.002. At the paper's lr, training
+# collapses (every node of a graph ends up with the same embedding) and does not recover.
 # Not in the paper, so set here: num_heads 2 (the largest head count dividing both
 # hidden_dim and hidden_dim + 10, its width once a node PE is concatenated), a
 # 3-layer output MLP, and the StepLR schedule of the GIN configs.
@@ -35,7 +37,7 @@ train:
     name: StepLR
     step_size: 100
     gamma: 0.95
-  lr : 0.002
+  lr : 0.001
   criterion: MSE
   wandb: 0
   train_files: './train_files/'
