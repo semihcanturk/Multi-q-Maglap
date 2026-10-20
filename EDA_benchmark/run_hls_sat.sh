@@ -1,6 +1,6 @@
 # SAT on High-level Synthesis (HLS). Hyperparameters in configs/general/hls/<target>/sat_*.yaml,
-# from the paper's SAT tables (arXiv:2407.20912); the paper has no CP column, so the CP configs
-# copy the DSP ones, as the GNN HLS configs do.
+# from the paper's SAT tables (arXiv:2407.20912) except for a lower lr; the paper has no CP
+# column, so the CP configs copy the DSP ones, as the GNN HLS configs do.
 #
 #   kernel=bi   -> sat_bigine (bidirected GIN structure extractor)
 #   kernel=undi -> sat_gine   (undirected GIN structure extractor)
