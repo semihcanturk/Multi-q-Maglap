@@ -224,6 +224,7 @@ requeue = true
 [tool.cluv.clusters.mila]
 # Overrides specific to the Mila cluster.
 env = { UV_OFFLINE = "0", WANDB_MODE = "online" }
+project_dir = "$HOME/Multi-q-Maglap"
 
 [tool.cluv.clusters.tamia]
 
