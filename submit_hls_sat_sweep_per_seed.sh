@@ -38,7 +38,8 @@
 set -e
 
 cd "$(dirname "$0")"
-mkdir -p logs
+# job logs of this submission get their own folder, so different sweeps don't mix
+log_dir=logs/hls_sat_sweep_$(date +%Y-%m-%d_%H-%M-%S)
 
 account=${ACCOUNT-def-wolfg}   # set but empty = no --account
 gres=${GRES:-}                 # empty = wrapper.sb's gpu:l40s:1
@@ -113,7 +114,8 @@ if [ "${missing}" -ne 0 ]; then
   exit 1
 fi
 
-echo "Submitting from $(pwd) at $(git log -1 --format='%h %s')"
+mkdir -p "${log_dir}"
+echo "Submitting from $(pwd) at $(git log -1 --format='%h %s'); job logs go to ${log_dir}/"
 num_jobs=0
 for task in "${tasks[@]}"; do
   IFS=: read -r kernel target general_config pe_config cache <<< "${task}"
@@ -136,7 +138,7 @@ for task in "${tasks[@]}"; do
     echo "Submitting ${job_name} ${dep_args[*]}"
     echo "  ${cmd}"
     job_id=$(sbatch "${sbatch_args[@]}" "${dep_args[@]}" --job-name="${job_name}" \
-      --output="logs/${job_name}_%j.out" wrapper.sb "${cmd}")
+      --output="${log_dir}/${job_name}_%j.out" wrapper.sb "${cmd}")
     job_id=${job_id%%;*} # --parsable prints "id" or "id;cluster"
     echo "  -> job ${job_id}"
     if [ -z "${!first_var}" ]; then printf -v "${first_var}" '%s' "${job_id}"; fi
@@ -144,4 +146,4 @@ for task in "${tasks[@]}"; do
   done
 done
 
-echo "Submitted ${num_jobs} jobs (${#tasks[@]} (kernel, objective, PE) runs x ${#seeds[@]} seeds, 1 seed per job)."
+echo "Submitted ${num_jobs} jobs (${#tasks[@]} (kernel, objective, PE) runs x ${#seeds[@]} seeds, 1 seed per job). Logs: ${log_dir}/"
