@@ -4,15 +4,20 @@
 # 4-layer SAT, 2-hop extractor, hidden 78, batch 64, lr 0.004,
 # dropout 0.1, 400 epochs, multi-q = (1/100, ..., 5/100).
 # The paper pools HLS graphs by mean; HLSModel sums (global_add_pool) for dsp/lut.
+# Changed from the paper: lr 0.0005 instead of the paper's 0.004. At 0.004, local runs of DSP and
+# LUT (No PE, both kernels, 4-10 epochs) stalled at validation MSE 86-91 on DSP and 10-12 on
+# LUT (target variance 136 / 18), against 6-8 / 2.3 at lr 0.001, with gradient norm spikes up
+# to 2e7, as AMP SAT has at the paper's lr. At 0.001 bidirected CP spiked after 4 epochs;
+# 0.0005 was stable on CP, DSP and LUT for 15 epochs.
 # Not in the paper, so set here: num_heads 2 (the largest head count dividing both
 # hidden_dim and hidden_dim + 10, its width once a node PE is concatenated), a
 # 3-layer output MLP, and the StepLR schedule of the GIN configs.
 #
 # HLS graphs have edge features, so this one config serves No PE (no --pe_config)
-# and every PE config. Paper PEs for this target: lap10/lap_gnn, lap10/lap_n_spe,
+# and every PE config. The paper's PEs for this target: lap10/lap_gnn, lap10/lap_n_spe,
 # maglap10/maglap_5q001_gnn, maglap10/maglap_5q001_n_spe (node-level SPE only on HLS).
-# run_hls_sat.sh also runs node+edge SPE (lap10/lap_n_spe_e_spe,
-# maglap10/maglap_5q001_n_spe_e_spe), as the GINE/BIGINE HLS sweeps do.
+# run_hls_sat.sh runs the node-level SPE ones, plus the node+edge SPE PEs of the GNN HLS
+# sweeps: Lap, multi-q Mag-PE with 5 potentials at q = 0.01 and 0.1, and PathLap.
 
 utils:
   seed: 123
@@ -35,7 +40,7 @@ train:
     name: StepLR
     step_size: 100
     gamma: 0.95
-  lr : 0.004
+  lr : 0.0005
   criterion: MSE
   wandb: 0
   train_files: './train_files/'
