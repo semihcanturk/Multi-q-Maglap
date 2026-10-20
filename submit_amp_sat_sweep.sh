@@ -1,6 +1,6 @@
 #!/bin/bash
 # Submits the SAT matrix of EDA_benchmark/run_amp_sat.sh with sbatch (via wrapper.sb), one job
-# per (kernel, objective, PE): 2 kernels x 3 objectives x 6 PEs = 36 jobs. Run it on the
+# per (kernel, objective, PE): 2 kernels x 3 objectives x 5 PEs = 30 jobs. Run it on the
 # cluster's login node, from a checkout that has the SAT configs. Each job runs the 5 seeds one
 # after another, then aggregate_seed_results.py folds the 5 result_seed*.csv files into
 # summary.csv. submit_amp_sat_sweep_cluv.sh submits the same jobs through cluv from your machine.
@@ -51,42 +51,40 @@ for kernel in "${kernels[@]}"; do
     if [ "${kernel}" = bi ]; then
       gin=sat_bigin
       gine=sat_bigine
-      # paper's multi-q for the bidirected SAT: (1..10)/100 for BW, (1..5)/100 otherwise
-      if [ "${target}" = bw ]; then mq=maglap_10q001; else mq=maglap_5q001; fi
+      # number of potentials of the paper's bidirected SAT: 10 for BW, 5 otherwise
+      if [ "${target}" = bw ]; then mq=maglap_10q; else mq=maglap_5q; fi
     elif [ "${kernel}" = undi ]; then
       gin=sat_gin
       gine=sat_gine
-      mq=maglap_10q001 # (1..10)/100 for every target
+      mq=maglap_10q # 10 potentials for every target
     else
       echo "Unknown kernel '${kernel}' (expected bi or undi)" >&2
       exit 1
     fi
 
-    # AMP graphs have no edge features, so node-only PEs run on GIN/BIGIN and PEs with an
-    # edge part on GINE/BIGINE.
+    # AMP graphs have no edge features, so No PE runs on GIN/BIGIN and the SPE PEs, which
+    # have an edge part, on GINE/BIGINE. Multi-q Mag-PE at q = 0.01 and at q = 0.1 (5q) /
+    # 0.05 (10q); the potentials are k*q for k = 1..#q.
     runs=(
       "${gin}:"
-      "${gin}:lap10/lap_gnn"
       "${gine}:lap10/lap_n_spe_e_spe"
-      "${gin}:maglap10/${mq}_gnn"
+      "${gine}:maglap10/${mq}001_n_spe_e_spe"
       "${gine}:maglap10/${mq}_n_spe_e_spe"
       "${gine}:pathlap10/pathlap_n_spe_e_spe"
     )
 
     for run in "${runs[@]}"; do
       pe_config=${run#*:}
-      # configs that share a cache directory (same PE type, dims and q values)
-      case "${pe_config}" in
-        "") cache=no_pe ;;
-        maglap10/*) cache=${mq} ;;
-        *) cache=${pe_config%%/*} ;; # lap10, pathlap10
-      esac
+      # each PE config above has its own cache directory (PE type, dims and q values), shared
+      # by every kernel and objective that uses it
+      cache=${pe_config##*/}
+      cache=${cache:-no_pe}
       tasks+=("${kernel}:${target}:amp/${target}/${run%%:*}:${pe_config}:${cache}")
     done
   done
 done
 
-# Check every config before submitting anything, so a stale checkout fails here, not in 36 jobs.
+# Check every config before submitting anything, so a stale checkout fails here, not in every job.
 missing=0
 for task in "${tasks[@]}"; do
   IFS=: read -r kernel target general_config pe_config cache <<< "${task}"
