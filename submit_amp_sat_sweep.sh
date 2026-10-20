@@ -71,6 +71,7 @@ for kernel in "${kernels[@]}"; do
       "${gine}:maglap10/${mq}001_n_spe_e_spe"
       "${gine}:maglap10/${mq}_n_spe_e_spe"
       "${gine}:pathlap10/pathlap_n_spe_e_spe"
+      "${gine}:pathlap10/pathlap_n_spe_e_naive"
     )
 
     for run in "${runs[@]}"; do

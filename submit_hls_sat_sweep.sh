@@ -39,7 +39,7 @@ mkdir -p logs
 account=${ACCOUNT-aip-wolfg}   # set but empty = no --account
 gres=${GRES:-}                 # empty = wrapper.sb's gpu:l40s:1
 walltime=${WALLTIME:-12:00:00} # 5 seeds + aggregation in one job
-cache_wait=${CACHE_WAIT:-15}   # minutes; 0 = no dependencies
+cache_wait=${CACHE_WAIT:-5}   # minutes; 0 = no dependencies
 
 device=0
 seeds=(${SEEDS:-121 122 123 124 125})
@@ -74,6 +74,7 @@ for kernel in "${kernels[@]}"; do
       "maglap10/maglap_5q001_n_spe_e_spe"
       "maglap10/maglap_5q_n_spe_e_spe"
       "pathlap10/pathlap_n_spe_e_spe"
+      "pathlap10/pathlap_n_spe_e_naive"
     )
     if [ "${target}" != cp ]; then
       pe_configs+=("lap10/lap_n_spe" "maglap10/${paper_mq}_n_spe")
