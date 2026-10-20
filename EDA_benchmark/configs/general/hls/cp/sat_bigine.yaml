@@ -1,0 +1,61 @@
+# SAT, structure extractor BIGINE (bidirected GIN with edge features), HLS / CP.
+# The paper has no CP results, so this config copies hls/dsp/sat_bigine.yaml, as the GNN
+# HLS configs for CP copy the DSP ones. The DSP values come from the paper:
+# Hyperparameters from the paper's table "Hyperparameter for SAT (each layer uses
+# bidirected GIN as kernel) on High-level Synthetic dataset" (arXiv:2407.20912, App. B):
+# 4-layer SAT, 2-hop extractor, hidden 78, batch 64, lr 0.004,
+# dropout 0.1, 400 epochs, multi-q = (1/100, ..., 5/100).
+# The paper pools HLS graphs by mean; HLSModel max-pools (global_max_pool) for cp.
+# Changed from the paper: lr 0.0005 instead of the DSP config's 0.004. At 0.004, local runs of DSP and
+# LUT (No PE, both kernels, 4-10 epochs) stalled at validation MSE 86-91 on DSP and 10-12 on
+# LUT (target variance 136 / 18), against 6-8 / 2.3 at lr 0.001, with gradient norm spikes up
+# to 2e7, as AMP SAT has at the paper's lr. At 0.001 bidirected CP spiked after 4 epochs;
+# 0.0005 was stable on CP, DSP and LUT for 15 epochs.
+# Not in the paper, so set here: num_heads 2 (the largest head count dividing both
+# hidden_dim and hidden_dim + 10, its width once a node PE is concatenated), a
+# 3-layer output MLP, and the StepLR schedule of the GIN configs.
+#
+# HLS graphs have edge features, so this one config serves No PE (no --pe_config)
+# and every PE config. run_hls_sat.sh runs the node+edge SPE PEs of the GNN HLS sweeps
+# on CP; the paper's node-only SPE runs are DSP/LUT only.
+
+utils:
+  seed: 123
+  torch_num_threads: 10
+
+task:
+  name: 'HLS'
+  type: cdfg # type: cdfg or dfg
+  target: cp # different target prediction
+  processed_folder: './data_processed/'
+  divide_seed: default #set as default or a seed
+  raw_data_path: './data_raw/HLS/'
+  data_processor: HLSDataProcessor
+
+train:
+  batch_size: 64
+  epoch: 400
+  optimizer: Adam
+  scheduler:
+    name: StepLR
+    step_size: 100
+    gamma: 0.95
+  lr : 0.0005
+  criterion: MSE
+  wandb: 0
+  train_files: './train_files/'
+  directed: 1
+
+model:
+  name: SAT
+  inner_gnn: BIGINE # structure-extractor GNN: GIN | GINE (undirected), BIGIN | BIGINE (bidirected)
+  k_hop: 2 # GNN layers in each SAT layer's structure extractor
+  num_heads: 2
+  hidden_dim: 78
+  num_layers: 4
+  node_input_dim: 7
+  edge_input_dim: 2
+  dropout: 0.1
+  mlp_out:
+    num_layer: 3
+  pe_file_name: no_pe
