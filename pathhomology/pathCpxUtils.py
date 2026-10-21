@@ -19,7 +19,7 @@ from scipy.sparse import (csc_matrix, csr_matrix, issparse, coo_matrix, spmatrix
 # ---------------------------
 def all_paths_csr(A: sp.spmatrix | np.ndarray, pmax: int) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """
-    Build all directed p-paths for p=0..pmax using CSR adjacency lists.
+    Build all allowed elementary p-paths for p=0..pmax using CSR adjacency lists.
 
     Returns
     -------
@@ -105,9 +105,187 @@ def boundary_split_fast(allPaths, indA_sorted, p, n):
       Bd_allowed    : (#allowed_prev x #paths_p)
       Bd_disallowed : (#disallowed_seen x #paths_p)
 
+    This version respects the regular-path convention used in the paper:
+    whenever deleting a vertex creates consecutive repeated vertices, the
+    resulting face is identified with zero and is therefore omitted from both
+    the allowed and disallowed parts of the boundary.
+
+    In particular, for p=2 and an allowed 2-path (v0,v1,v2), if v0 == v2 then
+    the middle face (v0,v2) = (v0,v0) is zero, so the corresponding column of
+    Bd_disallowed remains zero.
+
     Fixes:
       1) Safe membership test for searchsorted (avoids allowed_prev[pos] OOB).
-      2) Handles n_allowed == 0 case (your earlier fix).
+      2) Handles n_allowed == 0 case.
+      3) Skips zero faces arising from the regular-path quotient.
+    """
+    if p == 0:
+        m0 = allPaths[0].shape[0]
+        return sp.csc_matrix((0, m0)), sp.csc_matrix((0, m0))
+
+    P = np.asarray(allPaths[p], dtype=np.int64)
+    m = P.shape[0]
+
+    allowed_prev = np.asarray(indA_sorted[p - 1], dtype=np.int64)  # must be sorted
+    n_allowed = allowed_prev.size
+
+    if m == 0:
+        return sp.csc_matrix((n_allowed, 0)), sp.csc_matrix((0, 0))
+
+    # face lex weights for length-p faces
+    pow_face = n ** np.arange(p - 1, -1, -1, dtype=np.int64)
+
+    # lxs[i] = lex indices for face deleting vertex i
+    lxs = []
+    for i in range(p + 1):
+        left = 0 if i == 0 else (P[:, :i] @ pow_face[:i])
+        right = 0 if i == p else (P[:, i + 1:] @ pow_face[i:])
+        lxs.append((left + right).astype(np.int64, copy=False))
+
+    cols = np.arange(m, dtype=np.int64)
+
+    def zero_face_mask(i2: int) -> np.ndarray:
+        """
+        In the regular-path quotient, deleting an internal vertex yields zero
+        whenever the deletion creates consecutive repeated vertices, i.e.
+        v_{i2-1} == v_{i2+1}. For p=2 this is exactly the case v0 == v2.
+        """
+        if 0 < i2 < p:
+            return (P[:, i2 - 1] == P[:, i2 + 1])
+        return np.zeros(m, dtype=bool)
+
+    # -------------------------------
+    # Case: no allowed (p-1)-paths
+    # -------------------------------
+    if n_allowed == 0:
+        Bd_allowed = sp.csc_matrix((0, m))
+
+        rowsD_list, colsD_list, dataD_list = [], [], []
+        next_row = 0
+
+        for i2, lx in enumerate(lxs):
+            sgn = -1.0 if (i2 & 1) else 1.0
+            zero_face = zero_face_mask(i2)
+            bad = ~zero_face
+            bad_count = int(bad.sum())
+            if bad_count == 0:
+                continue
+
+            rowsD_list.append(np.arange(next_row, next_row + bad_count, dtype=np.int64))
+            colsD_list.append(cols[bad])
+            dataD_list.append(np.full(bad_count, sgn, dtype=np.float64))
+            next_row += bad_count
+
+        if next_row == 0:
+            return Bd_allowed, sp.csc_matrix((0, m))
+
+        rowsD = np.concatenate(rowsD_list)
+        colsD = np.concatenate(colsD_list)
+        dataD = np.concatenate(dataD_list)
+
+        Bd_disallowed = sp.coo_matrix(
+            (dataD, (rowsD, colsD)),
+            shape=(next_row, m)
+        ).tocsc()
+        return Bd_allowed, Bd_disallowed
+
+    # -------------------------------
+    # Normal case: split allowed/disallowed
+    # -------------------------------
+    rowsA_list, colsA_list, dataA_list = [], [], []
+    disallowed_all = []
+
+    # First pass: allowed COO + collect disallowed lex indices
+    for i2, lx in enumerate(lxs):
+        sgn = -1.0 if (i2 & 1) else 1.0
+        zero_face = zero_face_mask(i2)
+
+        pos = np.searchsorted(allowed_prev, lx)
+
+        ok = (pos < n_allowed)  # safe mask first
+        ok_idx = np.where(ok)[0]
+        if ok_idx.size:
+            ok[ok_idx] = (allowed_prev[pos[ok_idx]] == lx[ok_idx])
+
+        # Zero faces are omitted from both blocks.
+        ok = ok & (~zero_face)
+        bad = (~ok) & (~zero_face)
+
+        if np.any(ok):
+            rowsA_list.append(pos[ok])
+            colsA_list.append(cols[ok])
+            dataA_list.append(np.full(int(ok.sum()), sgn, dtype=np.float64))
+
+        if np.any(bad):
+            disallowed_all.append(lx[bad])
+
+    # Allowed block
+    if rowsA_list:
+        rowsA = np.concatenate(rowsA_list)
+        colsA = np.concatenate(colsA_list)
+        dataA = np.concatenate(dataA_list)
+        Bd_allowed = sp.coo_matrix(
+            (dataA, (rowsA, colsA)),
+            shape=(n_allowed, m)
+        ).tocsc()
+    else:
+        Bd_allowed = sp.csc_matrix((n_allowed, m))
+
+    # Disallowed block
+    if not disallowed_all:
+        return Bd_allowed, sp.csc_matrix((0, m))
+
+    dis_lx = np.concatenate(disallowed_all)
+    uniq, inv = np.unique(dis_lx, return_inverse=True)
+
+    # Second pass: rebuild disallowed entries
+    rowsD_list, colsD_list, dataD_list = [], [], []
+    offset = 0
+
+    for i2, lx in enumerate(lxs):
+        sgn = -1.0 if (i2 & 1) else 1.0
+        zero_face = zero_face_mask(i2)
+
+        pos = np.searchsorted(allowed_prev, lx)
+
+        ok = (pos < n_allowed)
+        ok_idx = np.where(ok)[0]
+        if ok_idx.size:
+            ok[ok_idx] = (allowed_prev[pos[ok_idx]] == lx[ok_idx])
+
+        ok = ok & (~zero_face)
+        bad = (~ok) & (~zero_face)
+
+        bad_count = int(bad.sum())
+        if bad_count:
+            rowsD_list.append(inv[offset:offset + bad_count])
+            colsD_list.append(cols[bad])
+            dataD_list.append(np.full(bad_count, sgn, dtype=np.float64))
+            offset += bad_count
+
+    rowsD = np.concatenate(rowsD_list) if rowsD_list else np.array([], dtype=np.int64)
+    colsD = np.concatenate(colsD_list) if colsD_list else np.array([], dtype=np.int64)
+    dataD = np.concatenate(dataD_list) if dataD_list else np.array([], dtype=np.float64)
+
+    Bd_disallowed = sp.coo_matrix(
+        (dataD, (rowsD, colsD)),
+        shape=(uniq.size, m)
+    ).tocsc()
+    return Bd_allowed, Bd_disallowed
+
+
+
+# Todo: Remove the function below once the new boundary_split_fast is fully tested and validated. It is kept here for reference and comparison.
+
+def boundary_split_fast0(allPaths, indA_sorted, p, n):
+    """
+    Build split boundary for allowed p-paths:
+      Bd_allowed    : (#allowed_prev x #paths_p)
+      Bd_disallowed : (#disallowed_seen x #paths_p)
+
+    Fixes:
+      1) Safe membership test for searchsorted (avoids allowed_prev[pos] OOB).
+      2) Handles n_allowed == 0 case.
     """
     if p == 0:
         m0 = allPaths[0].shape[0]
