@@ -82,9 +82,9 @@ for kernel in "${kernels[@]}"; do
       "pathlap10/pathlap_n_spe_e_spe"
       "pathlap10/pathlap_n_spe_e_naive"
     )
-    if [ "${target}" != cp ]; then
-      pe_configs+=("lap10/lap_n_spe" "maglap10/${paper_mq}_n_spe")
-    fi
+#    if [ "${target}" != cp ]; then
+#      pe_configs+=("lap10/lap_n_spe" "maglap10/${paper_mq}_n_spe")
+#    fi
 
     for pe_config in "${pe_configs[@]}"; do
       # configs that share a cache directory: same PE type, dims and q values
