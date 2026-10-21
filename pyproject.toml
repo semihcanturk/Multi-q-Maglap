@@ -230,7 +230,7 @@ project_dir = "$HOME/Multi-q-Maglap"
 
 [tool.cluv.clusters.killarney]
 # For example, you might not have a $SCRATCH on Killarney. This can be overwritten here.
-project_dir = "$HOME/Multi-q-Maglap"
+project_dir = "$HOME/projects/aip-wolfg/semiki/Multi-q-Maglap"
 results_path = "$HOME/logs/cluv"
 
 [tool.cluv.clusters.vulcan]
