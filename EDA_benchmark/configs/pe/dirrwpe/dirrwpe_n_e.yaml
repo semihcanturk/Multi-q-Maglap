@@ -1,0 +1,19 @@
+# Directed random-walk PE (maglap/get_dir_rwpe.py), node + edge parts: the counterpart of
+# lap_n_spe_e_spe / maglap_*_n_spe_e_spe / pathlap_n_spe_e_spe. The raw PE is pairwise,
+# R[u, v] = k-step walk probabilities (forward, then reverse) and PPR.
+#   node: DirRWPEEmbedder, sum_u ReLU(Linear(R[u, v])) -> Linear -> ReLU, concatenated to x
+#   edge: SparseEdgeDirRW, MLP(R[u, v]) on every message-passing edge, added to edge_attr
+model:
+  pe_file_name: dirrwpe_n_e
+  pe_type: dirrw
+  pe_strategy: invariant_fixed
+  dirrw_walk_length: 5
+  dirrw_reverse: true
+  dirrw_ppr_restart_p: 0.2 # null drops the PPR channel
+  dir_pe_dim_input: 12 # (dirrw_walk_length + 1 PPR) * 2 directions
+  dir_pe_dim_output: 10
+  se_pe_dim_input: 0
+  se_pe_dim_output: 0
+
+  pe_embedder:
+    name: dirrw

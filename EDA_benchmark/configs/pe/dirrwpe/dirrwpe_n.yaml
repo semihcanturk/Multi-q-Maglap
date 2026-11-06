@@ -1,0 +1,17 @@
+# Directed random-walk PE (maglap/get_dir_rwpe.py), node part only: the counterpart of
+# lap_n_spe / maglap_*_n_spe. DirRWPEEmbedder, sum_u ReLU(Linear(R[u, v])) -> Linear -> ReLU,
+# concatenated to x. No edge_attr is produced, so on AMP use a GIN/BIGIN backbone.
+model:
+  pe_file_name: dirrwpe_n
+  pe_type: dirrw
+  pe_strategy: variant
+  dirrw_walk_length: 5
+  dirrw_reverse: true
+  dirrw_ppr_restart_p: 0.2 # null drops the PPR channel
+  dir_pe_dim_input: 12 # (dirrw_walk_length + 1 PPR) * 2 directions
+  dir_pe_dim_output: 10
+  se_pe_dim_input: 0
+  se_pe_dim_output: 0
+
+  pe_embedder:
+    name: dirrw

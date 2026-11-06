@@ -1,0 +1,14 @@
+# Directed random-walk PE (maglap/get_dir_rwpe.py), edge part only: the counterpart of
+# lap_e_spe / maglap_1q_e_spe / pathlap_e_spe. SparseEdgeDirRW, MLP(R[u, v]) on every
+# message-passing edge, added to edge_attr.
+model:
+  pe_file_name: dirrwpe_e
+  pe_type: dirrw
+  pe_strategy: invariant_fixed
+  dirrw_walk_length: 5
+  dirrw_reverse: true
+  dirrw_ppr_restart_p: 0.2 # null drops the PPR channel
+  dir_pe_dim_input: 12 # (dirrw_walk_length + 1 PPR) * 2 directions
+  dir_pe_dim_output: 10
+  se_pe_dim_input: 0
+  se_pe_dim_output: 0
