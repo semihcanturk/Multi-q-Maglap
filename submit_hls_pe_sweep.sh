@@ -17,20 +17,22 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p logs
 
-model_config=gat_maglap_n_5q_spe_001
+model_config=bigine_maglap_n_5q_spe_001
 device=0
 seeds=(121 122 123 124 125)
 targets=(dsp lut cp)
 
 # "job-name-suffix:pe_config path (relative to EDA_benchmark/configs/pe/)"
 pe_configs=(
-  "lap_n_spe_e_spe:lap10/lap_n_spe_e_spe"
-  "maglap_5q001_n_spe_e_spe:maglap10/maglap_5q001_n_spe_e_spe"
-  "maglap_5q_n_spe_e_spe:maglap10/maglap_5q_n_spe_e_spe"
-  "pathlap_n_spe_e_spe:pathlap10/pathlap_n_spe_e_spe"
-  # naive (linear) edge encoder: matched control for pathlap_n_spe_e_spe, plus the
-  # edge-PE-only variant (no node-level SPE embedder).
-  "pathlap_n_spe_e_naive:pathlap10/pathlap_n_spe_e_naive"
+  # "lap_n_spe_e_spe:lap10/lap_n_spe_e_spe"
+  # "maglap_5q001_n_spe_e_spe:maglap10/maglap_5q001_n_spe_e_spe"
+  # "maglap_5q_n_spe_e_spe:maglap10/maglap_5q_n_spe_e_spe"
+  # "pathlap_n_spe_e_spe:pathlap10/pathlap_n_spe_e_spe"
+  # "pathlap_n_spe_e_naive:pathlap10/pathlap_n_spe_e_naive"
+  # directed random-walk PE: node + edge parts (matched to the n_spe_e_spe runs above), and
+  # node part only.
+  "dirrwpe_n_e:dirrwpe/dirrwpe_n_e"
+  "dirrwpe_n:dirrwpe/dirrwpe_n"
 )
 
 num_jobs=0

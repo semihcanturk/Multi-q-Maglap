@@ -1,6 +1,6 @@
 #!/bin/bash
 # Submits the SAT matrix of EDA_benchmark/run_amp_sat.sh with sbatch (via wrapper.sb), one job
-# per (kernel, objective, PE): 2 kernels x 3 objectives x 5 PEs = 30 jobs. Run it on the
+# per (kernel, objective, PE): 2 kernels x 3 objectives x 8 runs (No PE + 7 PEs) = 48 jobs. Run it on the
 # cluster's login node, from a checkout that has the SAT configs. Each job runs the 5 seeds one
 # after another, then aggregate_seed_results.py folds the 5 result_seed*.csv files into
 # summary.csv. submit_amp_sat_sweep_cluv.sh submits the same jobs through cluv from your machine.
@@ -63,24 +63,28 @@ for kernel in "${kernels[@]}"; do
       exit 1
     fi
 
-    # AMP graphs have no edge features, so No PE runs on GIN/BIGIN and the SPE PEs, which
-    # have an edge part, on GINE/BIGINE. Multi-q Mag-PE at q = 0.01 and at q = 0.1 (5q) /
-    # 0.05 (10q); the potentials are k*q for k = 1..#q.
+    # AMP graphs have no edge features, so No PE and the node-only dirrwpe_n run on GIN/BIGIN
+    # and the PEs with an edge part on GINE/BIGINE. Multi-q Mag-PE at q = 0.01 and at
+    # q = 0.1 (5q) / 0.05 (10q); the potentials are k*q for k = 1..#q.
     runs=(
-      "${gin}:"
-      "${gine}:lap10/lap_n_spe_e_spe"
-      "${gine}:maglap10/${mq}001_n_spe_e_spe"
-      "${gine}:maglap10/${mq}_n_spe_e_spe"
-      "${gine}:pathlap10/pathlap_n_spe_e_spe"
-      "${gine}:pathlap10/pathlap_n_spe_e_naive"
+      # "${gin}:"
+      # "${gine}:lap10/lap_n_spe_e_spe"
+      # "${gine}:maglap10/${mq}001_n_spe_e_spe"
+      # "${gine}:maglap10/${mq}_n_spe_e_spe"
+      # "${gine}:pathlap10/pathlap_n_spe_e_spe"
+      # "${gine}:pathlap10/pathlap_n_spe_e_naive"
+      "${gine}:dirrwpe/dirrwpe_n_e"
+      "${gin}:dirrwpe/dirrwpe_n"
     )
 
     for run in "${runs[@]}"; do
       pe_config=${run#*:}
       # each PE config above has its own cache directory (PE type, dims and q values), shared
-      # by every kernel and objective that uses it
+      # by every kernel and objective that uses it, except the two dirrwpe configs: they differ
+      # only in the model and share one
       cache=${pe_config##*/}
       cache=${cache:-no_pe}
+      case "${pe_config}" in dirrwpe/*) cache=dirrwpe ;; esac
       tasks+=("${kernel}:${target}:amp/${target}/${run%%:*}:${pe_config}:${cache}")
     done
   done

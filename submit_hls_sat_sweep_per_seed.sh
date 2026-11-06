@@ -1,9 +1,10 @@
 #!/bin/bash
 # Per-seed variant of submit_hls_sat_sweep.sh: the same SAT matrix, submitted with sbatch (via
 # wrapper.sb) as one job per (kernel, objective, PE, seed) instead of one job running the 5
-# seeds back to back: 2 kernels x (3 objectives x 6 PEs + 2 objectives x 2 paper PEs) x 5 seeds
-# = 220 jobs, each a single `python main.py`. Short jobs get through the queue sooner. Run it on
-# the cluster's login node, from a checkout that has the SAT configs.
+# seeds back to back: 2 kernels x 3 objectives x 8 runs (No PE + 7 PEs) x 5 seeds = 240 jobs
+# (the 2 paper PEs for DSP and LUT are commented out below), each a single `python main.py`.
+# Short jobs get through the queue sooner. Run it on the cluster's login node, from a checkout
+# that has the SAT configs.
 #
 # The (kernel, objective) -> general config / PE mapping below is copied from
 # submit_hls_sat_sweep.sh; keep the two in sync if either changes.
@@ -72,15 +73,17 @@ for kernel in "${kernels[@]}"; do
     fi
 
     # The PEs of the GNN HLS sweeps (node+edge SPE; multi-q Mag-PE with 5 potentials at q = 0.01
-    # and q = 0.1; PathLap with SPE and with the naive edge encoder), then the paper's node-only
-    # SPE runs for DSP and LUT (the paper has no CP).
+    # and q = 0.1; PathLap with SPE and with the naive edge encoder; directed random-walk PE, node
+    # + edge and node only), then the paper's node-only SPE runs for DSP and LUT (the paper has no CP).
     pe_configs=(
-      ""
-      "lap10/lap_n_spe_e_spe"
-      "maglap10/maglap_5q001_n_spe_e_spe"
-      "maglap10/maglap_5q_n_spe_e_spe"
-      "pathlap10/pathlap_n_spe_e_spe"
-      "pathlap10/pathlap_n_spe_e_naive"
+      # ""
+      # "lap10/lap_n_spe_e_spe"
+      # "maglap10/maglap_5q001_n_spe_e_spe"
+      # "maglap10/maglap_5q_n_spe_e_spe"
+      # "pathlap10/pathlap_n_spe_e_spe"
+      # "pathlap10/pathlap_n_spe_e_naive"
+      "dirrwpe/dirrwpe_n_e"
+      "dirrwpe/dirrwpe_n"
     )
 #    if [ "${target}" != cp ]; then
 #      pe_configs+=("lap10/lap_n_spe" "maglap10/${paper_mq}_n_spe")
@@ -91,7 +94,7 @@ for kernel in "${kernels[@]}"; do
       case "${pe_config}" in
         "") cache=no_pe ;;
         maglap10/*) cache=${pe_config#maglap10/}; cache=${cache%%_n_*} ;; # maglap_5q001, maglap_5q, maglap_2q001
-        *) cache=${pe_config%%/*} ;; # lap10, pathlap10
+        *) cache=${pe_config%%/*} ;; # lap10, pathlap10, dirrwpe
       esac
       tasks+=("${kernel}:${target}:${general_config}:${pe_config}:${cache}")
     done

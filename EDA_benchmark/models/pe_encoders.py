@@ -3,7 +3,7 @@ from torch import nn
 from models.base_model import MLPs
 from torch_geometric.nn import GINConv
 from torch.nn import LayerNorm
-from maglap.handle_complex import DenseComplexNetwork
+from maglap.handle_complex import DenseComplexNetwork, dirrw_pair_targets
 from torch_geometric.utils import to_dense_batch
 
 # this GIN is for pe_projection only
@@ -40,6 +40,8 @@ class PEEmbedderWrapper(nn.Module):
             self.embedder = NaivePEEmbedder(args)
         elif args['pe_embedder']['name'] in ['regular', 'spe']:
             self.embedder = PEEmbedder(args)
+        elif args['pe_embedder']['name'] == 'dirrw':
+            self.embedder = DirRWPEEmbedder(args)
         else:
             raise Exception("pe_embedder name unknown!")
 
@@ -63,6 +65,32 @@ class NaivePEEmbedder(nn.Module):
         if self.pe_type == 'maglap':
             x = torch.cat([x.real, x.imag], dim=-1)
         return self.linear(x)
+
+class DirRWPEEmbedder(nn.Module):
+    """Node PE from the pairwise directed random-walk PE (maglap/get_dir_rwpe.py).
+
+    Same network as DirRWPENodeEncoder in the root model/dir_rwpe_encoder.py: pairwise
+    Linear -> ReLU, sum over sources u, Linear -> ReLU, one vector per target node v. Like
+    the other embedders here it returns the node PE and MiddleModel concatenates it to x,
+    and the per-graph loop is replaced by one index_add_ over the whole batch.
+    Input pe: [sum_g N_g**2, d], each graph's [N, N, d] PE flattened row-major.
+    """
+    def __init__(self, args):
+        super(DirRWPEEmbedder, self).__init__()
+        pe_dim = args['dir_pe_dim_input']
+        self.linear = nn.Linear(pe_dim, pe_dim)
+        self.mlp = nn.Linear(pe_dim, args['dir_pe_dim_output'])
+        self.act = nn.ReLU()
+
+    def forward(self, pe, Lambda, edge_index, batch):
+        targets = dirrw_pair_targets(batch)
+        if targets.numel() != pe.size(0):
+            raise ValueError(f'dir-RWPE pair count mismatch: {targets.numel()} pairs in the batch, '
+                             f'found {pe.size(0)} rows')
+        encoded = self.act(self.linear(pe))  # R[u, v, :] -> [sum_g N_g**2, d]
+        node_pe = encoded.new_zeros(batch.size(0), encoded.size(-1)).index_add_(0, targets, encoded)  # sum over u
+        return self.act(self.mlp(node_pe))
+
 
 class PEEmbedder(nn.Module):
     def __init__(self, args, dropout=0.1):

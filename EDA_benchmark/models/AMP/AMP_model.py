@@ -68,7 +68,8 @@ class AMPModel(nn.Module):
                                    pat_edge_pe = getattr(batch_data, 'pat_edge_pe', None),
                                    pat_edge_pe_sub = getattr(batch_data, 'pat_edge_pe_sub', None),
                                    Lambda_sub = getattr(batch_data, 'Lambda_sub', None),
-                                  Lambda = batch_data.Lambda)
+                                  dir_pe = getattr(batch_data, 'dir_pe', None),
+                                  Lambda = getattr(batch_data, 'Lambda', None))
 
         # align dimension between middle model 1 and 2
         x = self.bridge_layer(x)
@@ -82,7 +83,8 @@ class AMPModel(nn.Module):
                                   pat_edge_pe = getattr(batch_data, 'pat_edge_pe', None),
                                   pat_edge_pe_sub = getattr(batch_data, 'pat_edge_pe_sub', None),
                                   Lambda_sub = getattr(batch_data, 'Lambda_sub', None),
-                                  Lambda = batch_data.Lambda)
+                                  dir_pe = getattr(batch_data, 'dir_pe', None),
+                                  Lambda = getattr(batch_data, 'Lambda', None))
         #final MLP
         x_add = global_add_pool(x, batch_data.batch)
         #x_max = global_max_pool(x, batch_data.batch)

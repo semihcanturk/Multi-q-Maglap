@@ -19,6 +19,7 @@ import torch_geometric.transforms as T
 from utils import create_nested_folder
 from maglap.get_mag_lap import AddMagLaplacianEigenvectorPE, AddLaplacianEigenvectorPE
 from maglap.get_path_lap import AddPathLaplacianEigenvectorPE3
+from maglap.get_dir_rwpe import AddDirectedRandomWalkPE, dir_rwpe_dim
 
 
 class AMPDataProcessor(InMemoryDataset):
@@ -51,6 +52,13 @@ class AMPDataProcessor(InMemoryDataset):
             self.pathlap_pre_transform = Compose([AddPathLaplacianEigenvectorPE3(
                 k=config['model']['pat_pe_dim_input'], node_attr_name='pat_pe', edge_attr_name='pat_edge_pe',
                 normalize=config['model'].get('pathlap_normalize', True))])
+        elif self.pe_type == 'dirrw':
+            pre_transform = Compose([T.AddRandomWalkPE(walk_length = config['model']['se_pe_dim_input'], attr_name = 'rw_se')])
+            dirrw_args = dict(walk_length=config['model']['dirrw_walk_length'], reverse=config['model']['dirrw_reverse'],
+                              ppr_restart_p=config['model']['dirrw_ppr_restart_p'])
+            assert config['model']['dir_pe_dim_input'] == dir_rwpe_dim(**dirrw_args), \
+                'dir_pe_dim_input must equal (dirrw_walk_length + PPR) * (2 if dirrw_reverse else 1)'
+            self.dirrw_pre_transform = Compose([AddDirectedRandomWalkPE(**dirrw_args, attr_name='dir_pe')])
         super().__init__(root = self.save_folder, pre_transform = pre_transform)
         if mode == 'train':
             self.data, self.slices = torch.load(self.split_paths[f'train_{self.train_stage_num}'], weights_only=False)
@@ -79,6 +87,11 @@ class AMPDataProcessor(InMemoryDataset):
             processed_dir += '_pathlap' + str(self.config['model']['pat_pe_dim_input'])
             if self.config['model'].get('pathlap_normalize', True) is False:
                 processed_dir += '_nonorm'
+        elif self.pe_type == 'dirrw':
+            processed_dir += ('_dirrw' + str(self.config['model']['dirrw_walk_length'])
+                              + '_ppr' + str(self.config['model']['dirrw_ppr_restart_p']))
+            if not self.config['model']['dirrw_reverse']:
+                processed_dir += '_noreverse'
         return processed_dir
     
     @property
@@ -178,6 +191,10 @@ class AMPDataProcessor(InMemoryDataset):
                         sub_data = self.pathlap_pre_transform(Data(x=data.x, edge_index=sub_edge_index))
                         data['pat_edge_pe_sub'] = sub_data['pat_edge_pe']
                         data['Lambda_sub'] = sub_data['Lambda']
+                    elif self.pe_type == 'dirrw':
+                        # pairwise, so it also covers the sub_edge_index pairs (read off the
+                        # full-graph PE, as lap/maglap do with their full-graph eigenvectors)
+                        data['dir_pe'] = self.dirrw_pre_transform(data)['dir_pe']
                 # append to a list, once per stage-config this graph participates in
                 for stage_num in (2, 3):
                     split = splits[stage_num]

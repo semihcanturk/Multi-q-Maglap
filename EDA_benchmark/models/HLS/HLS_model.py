@@ -88,7 +88,8 @@ class HLSModel(nn.Module):
                                   mag_pe = getattr(batch_data, 'mag_pe', None), lap_pe = getattr(batch_data, 'lap_pe', None),
                                   pat_pe = getattr(batch_data, 'pat_pe', None),
                                   pat_edge_pe = getattr(batch_data, 'pat_edge_pe', None),
-                                  Lambda = batch_data.Lambda)
+                                  dir_pe = getattr(batch_data, 'dir_pe', None),
+                                  Lambda = getattr(batch_data, 'Lambda', None))
         # global pool and final MLP
         if self.target == 'cp':
             x = global_max_pool(x, batch_data.batch)

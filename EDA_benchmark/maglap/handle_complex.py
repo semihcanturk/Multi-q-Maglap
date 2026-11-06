@@ -340,6 +340,67 @@ class SparseEdgeLinear(torch.nn.Module):
         return self.linear(pe_edge)
 
 
+def dirrw_pair_offsets(batch):
+    """Per-graph sizes, node offsets and pair offsets of a batched directed random-walk PE.
+
+    AddDirectedRandomWalkPE stores each graph's [N, N, d] PE flattened row-major as
+    [N * N, d], and PyG concatenates these along dim 0 when batching, so pair (u, v) of
+    graph g sits at row pair_ptr[g] + (u - node_ptr[g]) * N_g + (v - node_ptr[g]).
+    """
+    sizes = torch.bincount(batch)
+    node_ptr = torch.cat([sizes.new_zeros(1), sizes.cumsum(0)[:-1]])
+    pair_ptr = torch.cat([sizes.new_zeros(1), (sizes * sizes).cumsum(0)[:-1]])
+    return sizes, node_ptr, pair_ptr
+
+
+def dirrw_pair_rows(u, v, batch):
+    """Rows of the batched [sum_g N_g**2, d] PE holding pairs (u[i], v[i]) (global node ids)."""
+    sizes, node_ptr, pair_ptr = dirrw_pair_offsets(batch)
+    g = batch[u]
+    return pair_ptr[g] + (u - node_ptr[g]) * sizes[g] + (v - node_ptr[g])
+
+
+def dirrw_pair_targets(batch):
+    """Global id of the target node v of every row of the batched [sum_g N_g**2, d] PE."""
+    sizes, node_ptr, pair_ptr = dirrw_pair_offsets(batch)
+    row_graph = torch.repeat_interleave(torch.arange(sizes.numel(), device=batch.device), sizes * sizes)
+    local = torch.arange(row_graph.numel(), device=batch.device) - pair_ptr[row_graph]
+    return node_ptr[row_graph] + local % sizes[row_graph]
+
+
+class SparseEdgeDirRW(torch.nn.Module):
+    """Edge features from the pairwise directed random-walk PE (AddDirectedRandomWalkPE).
+
+    For every message-passing edge (u, v) this reads the raw pair entry ``R[u, v, :]``
+    (k-step forward/reverse walk probabilities and PPR) and maps it to ``out_dim`` with a
+    2-layer MLP: the per-pair Linear -> ReLU of the node-level DirRWPEEmbedder followed by
+    a linear readout, as for the other edge PE networks. The entries are probabilities,
+    so there is no sign or basis ambiguity to be invariant to. (u, v) does not have to be
+    an edge of the graph the PE was computed on (e.g. AMP's sub_edge_index), the same way
+    SparseComplexNetwork evaluates the full-graph eigenvector gram on those pairs.
+
+    Args:
+        pe_dim: Channels d of the pairwise PE.
+        out_dim: Output feature dimension per edge.
+    """
+
+    def __init__(self, pe_dim, out_dim):
+        super().__init__()
+        self.mlp = MLPs(pe_dim, pe_dim, out_dim, 2)
+
+    def forward(self, pe_pair, edge_index, batch):
+        """
+        Args:
+            pe_pair: ``[sum_g N_g**2, d]`` batched pairwise PE.
+            edge_index: ``[2, E]`` pairs to read, in global node ids.
+            batch: ``[N]`` graph id of every node.
+        Returns:
+            ``[E, out_dim]`` edge features.
+        """
+        rows = dirrw_pair_rows(edge_index[0], edge_index[1], batch)
+        return self.mlp(pe_pair[rows])
+
+
 class DenseComplexNetwork(torch.nn.Module):
     def __init__(self, pe_dim, q_dim, pe_type, out_dim, network_type='spe', norm=None):
         super(DenseComplexNetwork, self).__init__()

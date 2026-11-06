@@ -13,7 +13,7 @@ from torch_geometric.utils import to_dense_batch
 
 from models.base_model import BaseModel, MLPs
 from models.pe_encoders import PEEmbedderWrapper
-from maglap.handle_complex import ComplexHandler, SparseComplexNetwork, DenseComplexNetwork, SparseEdgeSPE, SparseEdgeLinear
+from maglap.handle_complex import ComplexHandler, SparseComplexNetwork, DenseComplexNetwork, SparseEdgeSPE, SparseEdgeLinear, SparseEdgeDirRW
 from maglap.get_path_lap import build_two_path_index
 
 class RedrawProjection:
@@ -84,6 +84,8 @@ class MiddleModel(torch.nn.Module):
                 pe_dim = args.get('mag_pe_dim_input')
             elif self.pe_type == 'pathlap':
                 pe_dim = args.get('pat_pe_dim_input')
+            elif self.pe_type == 'dirrw':
+                pe_dim = args.get('dir_pe_dim_input')
             else:
                 pe_dim = args.get('lap_pe_dim_input')
             if self.pe_strategy == 'variant':
@@ -112,6 +114,10 @@ class MiddleModel(torch.nn.Module):
                         norm = args['pe_embedder'].get('norm') if args.get('pe_embedder') is not None else None
                         self.edge_pe_net = SparseEdgeSPE(pe_dim=pe_dim, out_dim=desired_pe_edge_dim,
                                                           eigval_dim=args['eigval_encoder']['out'], norm=norm)
+                elif self.pe_type == 'dirrw':
+                    # the PE is already pairwise: read R[u, v] on every message-passing edge
+                    assert self.base_model_name != 'GPS', 'dirrw has no dense attention-bias network for GPS'
+                    self.edge_pe_net = SparseEdgeDirRW(pe_dim=pe_dim, out_dim=desired_pe_edge_dim)
                 else:
                     self.sparse_pe_net = SparseComplexNetwork(pe_dim, q_dim, self.pe_type, desired_pe_edge_dim,
                                                               network_type=args['pe_encoder'])
@@ -181,6 +187,9 @@ class MiddleModel(torch.nn.Module):
             edge_batch = batch[edge_index[0]]
             edge_pe = self.edge_pe_net(kwargs['pat_edge_pe' + suffix], kwargs['Lambda' + suffix],
                                         pair_index, edge_batch)
+            edge_attr = kwargs['edge_attr'] + edge_pe if 'edge_attr' in kwargs else edge_pe
+        elif self.pe_type == 'dirrw':
+            edge_pe = self.edge_pe_net(z, edge_index, batch)
             edge_attr = kwargs['edge_attr'] + edge_pe if 'edge_attr' in kwargs else edge_pe
         elif 'edge_attr' in kwargs:
             edge_attr = kwargs['edge_attr'] + self.sparse_pe_net(z, kwargs['Lambda'], edge_index, batch)

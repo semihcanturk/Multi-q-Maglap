@@ -17,6 +17,7 @@ import torch_geometric.transforms as T
 from utils import create_nested_folder
 from maglap.get_mag_lap import AddMagLaplacianEigenvectorPE, AddLaplacianEigenvectorPE
 from maglap.get_path_lap import AddPathLaplacianEigenvectorPE3
+from maglap.get_dir_rwpe import AddDirectedRandomWalkPE, dir_rwpe_dim
 
 
 class HLSDataProcessor(InMemoryDataset):
@@ -42,6 +43,13 @@ class HLSDataProcessor(InMemoryDataset):
             self.pathlap_pre_transform = Compose([AddPathLaplacianEigenvectorPE3(
                 k=config['model']['pat_pe_dim_input'], node_attr_name='pat_pe', edge_attr_name='pat_edge_pe',
                 normalize=config['model'].get('pathlap_normalize', True))])
+        elif self.pe_type == 'dirrw':
+            pre_transform = Compose([T.AddRandomWalkPE(walk_length = config['model']['se_pe_dim_input'], attr_name = 'rw_se')])
+            dirrw_args = dict(walk_length=config['model']['dirrw_walk_length'], reverse=config['model']['dirrw_reverse'],
+                              ppr_restart_p=config['model']['dirrw_ppr_restart_p'])
+            assert config['model']['dir_pe_dim_input'] == dir_rwpe_dim(**dirrw_args), \
+                'dir_pe_dim_input must equal (dirrw_walk_length + PPR) * (2 if dirrw_reverse else 1)'
+            self.dirrw_pre_transform = Compose([AddDirectedRandomWalkPE(**dirrw_args, attr_name='dir_pe')])
         super().__init__(root = self.save_folder, pre_transform = pre_transform)
         self.data, self.slices = torch.load(self.split_paths[mode], weights_only=False)
     @property
@@ -61,6 +69,11 @@ class HLSDataProcessor(InMemoryDataset):
             processed_dir += '_pathlap' + str(self.config['model']['pat_pe_dim_input'])
             if self.config['model'].get('pathlap_normalize', True) is False:
                 processed_dir += '_nonorm'
+        elif self.pe_type == 'dirrw':
+            processed_dir += ('_dirrw' + str(self.config['model']['dirrw_walk_length'])
+                              + '_ppr' + str(self.config['model']['dirrw_ppr_restart_p']))
+            if not self.config['model']['dirrw_reverse']:
+                processed_dir += '_noreverse'
         return processed_dir
     
     @property
@@ -123,7 +136,7 @@ class HLSDataProcessor(InMemoryDataset):
                                     cp = torch.tensor(cdfg_graph_list[id]['cp']).to(dtype=torch.float32), lut = torch.tensor(cdfg_graph_list[id]['lut']).to(dtype=torch.float32),
                                     ff = torch.tensor(cdfg_graph_list[id]['ff']).to(dtype=torch.float32), slice = torch.tensor(cdfg_graph_list[id]['slice']).to(dtype=torch.float32))
                         # add undirected random walk SE
-                        if self.pe_type in ['lap', 'maglap', 'pathlap']:
+                        if self.pe_type in ['lap', 'maglap', 'pathlap', 'dirrw']:
                             if self.config['model']['se_pe_dim_input'] > 0:
                                 bi_edge_index, bi_edge_weight = to_undirected(data.edge_index, data.edge_attr)
                                 padded_data = self.add_padding(data, max(self.config['model'][self.pe_type[:3]+'_pe_dim_input'], self.config['model']['se_pe_dim_input']))
@@ -143,6 +156,8 @@ class HLSDataProcessor(InMemoryDataset):
                                 data['pat_pe'] = path_data['pat_pe']
                                 data['pat_edge_pe'] = path_data['pat_edge_pe']
                                 data['Lambda'] = path_data['Lambda']
+                            elif self.pe_type == 'dirrw':
+                                data['dir_pe'] = self.dirrw_pre_transform(data)['dir_pe']
                         data_list.append(data)
                 else:  
                     for i, id in enumerate(indice_dict[key]):
@@ -153,7 +168,7 @@ class HLSDataProcessor(InMemoryDataset):
                                     cp = torch.tensor(dfg_graph_list[id]['cp']).to(dtype=torch.float32), lut = torch.tensor(dfg_graph_list[id]['lut']).to(dtype=torch.float32),
                                     ff = torch.tensor(dfg_graph_list[id]['ff']).to(dtype=torch.float32), slice = torch.tensor(dfg_graph_list[id]['slice']).to(dtype=torch.float32))
                         # add random walk SE
-                        if self.pe_type in ['lap', 'maglap', 'pathlap']:
+                        if self.pe_type in ['lap', 'maglap', 'pathlap', 'dirrw']:
                             if self.config['model']['se_pe_dim_input'] > 0:
                                 bi_edge_index, bi_edge_weight = to_undirected(data.edge_index, data.edge_attr)
                                 padded_data = self.add_padding(data, max(self.config['model'][self.pe_type[:3]+'_pe_dim_input'], self.config['model']['se_pe_dim_input']))
@@ -173,6 +188,8 @@ class HLSDataProcessor(InMemoryDataset):
                                 data['pat_pe'] = path_data['pat_pe']
                                 data['pat_edge_pe'] = path_data['pat_edge_pe']
                                 data['Lambda'] = path_data['Lambda']
+                            elif self.pe_type == 'dirrw':
+                                data['dir_pe'] = self.dirrw_pre_transform(data)['dir_pe']
                         data_list.append(data)
                 data, slices = self.collate(data_list)
                 torch.save((data, slices), self.split_paths[key])
