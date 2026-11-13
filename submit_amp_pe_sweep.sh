@@ -19,21 +19,21 @@ mkdir -p logs
 model_config=bigin_nope
 device=0
 seeds=(121 122 123 124 125)
-targets=(bw gain pm)
+targets=(gain pm)
 train_stage_nums=(3)
 
 # "job-name-suffix:pe_config path (relative to EDA_benchmark/configs/pe/)"
 pe_configs=(
   # "lap_n_spe_e_spe:lap10/lap_n_spe_e_spe"
-  # "maglap_10q001_n_spe_e_spe:maglap10/maglap_10q001_n_spe_e_spe"
-  # "maglap_10q_n_spe_e_spe:maglap10/maglap_10q_n_spe_e_spe"
+  "maglap_5q001_n_spe_e_spe:maglap10/maglap_5q001_n_spe_e_spe"
+  "maglap_5q005_n_spe_e_spe:maglap10/maglap_5q005_n_spe_e_spe"
   # "pathlap_n_spe_e_spe:pathlap10/pathlap_n_spe_e_spe"
   # "pathlap_n_spe_e_naive:pathlap10/pathlap_n_spe_e_naive"
   # directed random-walk PE: node + edge parts (matched to the n_spe_e_spe runs above), and
   # node part only. AMP graphs have no edge features, so dirrwpe_n gives the model no
   # edge_attr: it needs a model_config that runs without one (GAT/GIN, not GINE/BIGINE).
-  "dirrwpe_n_e:dirrwpe/dirrwpe_n_e"
-  "dirrwpe_n:dirrwpe/dirrwpe_n"
+  # "dirrwpe_n_e:dirrwpe/dirrwpe_n_e"
+  # "dirrwpe_n:dirrwpe/dirrwpe_n"
 )
 
 num_jobs=0
