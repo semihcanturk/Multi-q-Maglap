@@ -16,7 +16,7 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p logs
 
-model_config=bigin_nope
+model_config=gine_10q001
 device=0
 seeds=(121 122 123 124 125)
 targets=(gain pm)
@@ -51,7 +51,7 @@ for entry in "${pe_configs[@]}"; do
       job_name="amp_${target}_${pe_name}_stage${stage}"
       echo "Submitting ${job_name}"
       echo "  ${cmd}"
-      sbatch --account=aip-wolfg --job-name="${job_name}" --output="logs/${job_name}_%j.out" wrapper.sb "${cmd}"
+      sbatch --account=def-wolfg --job-name="${job_name}" --output="logs/${job_name}_%j.out" wrapper.sb "${cmd}"
       num_jobs=$((num_jobs + 1))
     done
   done
