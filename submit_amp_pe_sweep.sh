@@ -25,9 +25,11 @@ train_stage_nums=(3)
 # "job-name-suffix:pe_config path (relative to EDA_benchmark/configs/pe/)"
 pe_configs=(
   # "lap_n_spe_e_spe:lap10/lap_n_spe_e_spe"
-  "maglap_5q001_n_spe_e_spe:maglap10/maglap_5q001_n_spe_e_spe"
-  "maglap_5q005_n_spe_e_spe:maglap10/maglap_5q005_n_spe_e_spe"
+  # "maglap_5q001_n_spe_e_spe:maglap10/maglap_5q001_n_spe_e_spe"
+  # "maglap_5q005_n_spe_e_spe:maglap10/maglap_5q005_n_spe_e_spe"
   # "pathlap_n_spe_e_spe:pathlap10/pathlap_n_spe_e_spe"
+  "pathlap_up_n_spe_e_spe:pathlap10/pathlap_up_n_spe_e_spe"
+  "pathlap_down_n_spe_e_spe:pathlap10/pathlap_down_n_spe_e_spe"
   # "pathlap_n_spe_e_naive:pathlap10/pathlap_n_spe_e_naive"
   # directed random-walk PE: node + edge parts (matched to the n_spe_e_spe runs above), and
   # node part only. AMP graphs have no edge features, so dirrwpe_n gives the model no
