@@ -42,7 +42,8 @@ class HLSDataProcessor(InMemoryDataset):
             pre_transform = Compose([T.AddRandomWalkPE(walk_length = config['model']['se_pe_dim_input'], attr_name = 'rw_se')])
             self.pathlap_pre_transform = Compose([AddPathLaplacianEigenvectorPE3(
                 k=config['model']['pat_pe_dim_input'], node_attr_name='pat_pe', edge_attr_name='pat_edge_pe',
-                normalize=config['model'].get('pathlap_normalize', True))])
+                normalize=config['model'].get('pathlap_normalize', True),
+                mode=config['model'].get('pathlap_mode', 'full'))])
         elif self.pe_type == 'dirrw':
             pre_transform = Compose([T.AddRandomWalkPE(walk_length = config['model']['se_pe_dim_input'], attr_name = 'rw_se')])
             dirrw_args = dict(walk_length=config['model']['dirrw_walk_length'], reverse=config['model']['dirrw_reverse'],
@@ -67,6 +68,8 @@ class HLSDataProcessor(InMemoryDataset):
             processed_dir += '_' + str(self.config['model']['mag_pe_dim_input']) + 'k_' + str(self.config['model']['q_dim']) + 'q' + str(self.config['model']['q'])
         elif self.pe_type == 'pathlap':
             processed_dir += '_pathlap' + str(self.config['model']['pat_pe_dim_input'])
+            if self.config['model'].get('pathlap_mode', 'full') != 'full':
+                processed_dir += '_' + self.config['model']['pathlap_mode']
             if self.config['model'].get('pathlap_normalize', True) is False:
                 processed_dir += '_nonorm'
         elif self.pe_type == 'dirrw':

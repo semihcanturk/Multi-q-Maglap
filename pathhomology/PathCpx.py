@@ -88,6 +88,66 @@ class PathComplex:
         )
         return Lap_list
 
+    def get_down_only_laplacians(
+        self,
+        normalize: bool = True,
+        fmt: str = "csr",
+    ):
+        """
+        Compute the node Laplacian L0 and the down-only edge
+        Laplacian L1_down.
+
+        L0      = B1 @ B1.T
+        L1_down = B1.T @ B1
+
+        No 2-path information is used.
+        """
+        if self.pmax < 1:
+            raise ValueError("PathComplex requires pmax >= 1.")
+
+        B1_allowed, B1_disallowed = self.get_boundaries(1)
+
+        # Every regular elementary 1-path is invariant.
+        assert B1_disallowed.shape[0] == 0
+
+        B1 = B1_allowed.tocsr().astype(np.float64)
+
+        L0 = (B1 @ B1.T).tocsr()
+        L1_down = (B1.T @ B1).tocsr()
+
+        if normalize:
+            L0 = normalize_hodge_laplacian(L0)
+            L1_down = normalize_hodge_laplacian(L1_down)
+
+        return L0.asformat(fmt), L1_down.asformat(fmt)
+
+    def get_up_only_laplacians(
+        self,
+        normalize: bool = True,
+        fmt: str = "csr",
+    ):
+        """
+        Compute the node Laplacian L0 and the up-only edge
+        Laplacian L1_up.
+
+        L0    = B1 @ B1.T
+        L1_up = B2 @ B2.T   (B2: boundary from invariant 2-paths to 1-paths)
+        """
+        if self.pmax < 1:
+            raise ValueError("PathComplex requires pmax >= 1.")
+
+        _, bdry = omega_and_bdry(self.all_paths, self.indA_sorted, qmax=2, n=self.n)
+        Bp1 = bdry[1]
+        Bp2 = bdry[2]
+        L0 = (Bp1 @ Bp1.T).tocsr()
+        L1_up = (Bp2 @ Bp2.T).tocsr()
+
+        if normalize:
+            L0 = normalize_hodge_laplacian(L0)
+            L1_up = normalize_hodge_laplacian(L1_up)
+
+        return L0.asformat(fmt), L1_up.asformat(fmt)
+
     def get_normalized_hodge_laplacian(self, p_list, tol: float = 1e-12, fmt: str = "csr"):
         Lap_list = self.get_hodge_laplacian(p_list, tol=tol, fmt=fmt)
         normalized_list = [normalize_hodge_laplacian(L).asformat(fmt) if fmt else normalize_hodge_laplacian(L)

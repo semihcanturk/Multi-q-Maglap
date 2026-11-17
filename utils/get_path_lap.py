@@ -555,6 +555,7 @@ class AddPathLaplacianEigenvectorPE3(BaseTransform):
             sigma: float = -1e-5,
             dtype: str = "float64",
             gpu_dense_max_nodes: int = CUSOLVER_EIGH_MAX_N,
+            mode: str = "full",
             **kwargs
     ):
         self.k = int(k)
@@ -568,6 +569,7 @@ class AddPathLaplacianEigenvectorPE3(BaseTransform):
         self.sigma = sigma
         self.dtype = dtype
         self.gpu_dense_max_nodes = gpu_dense_max_nodes
+        self.mode = mode
         self.kwargs = kwargs
 
     def forward(self, data: Data) -> Data:
@@ -580,17 +582,31 @@ class AddPathLaplacianEigenvectorPE3(BaseTransform):
         cpx = PathComplex(G, pmax=pmax)
 
         if self.normalize:
-            Lap0, Lap1 = cpx.get_normalized_hodge_laplacian(
-                p_list,
-                tol=1e-12,
-                fmt="csr",
-            )
+            if self.mode == "full":
+                Lap0, Lap1 = cpx.get_normalized_hodge_laplacian(
+                    p_list,
+                    tol=1e-12,
+                    fmt="csr",
+                )
+            elif self.mode == "down":
+                Lap0, Lap1 = cpx.get_down_only_laplacians()
+            elif self.mode == "up":
+                Lap0, Lap1 = cpx.get_up_only_laplacians()
+            else:
+                raise ValueError("'mode' should be either 'full', 'up' or 'down'.")
         else:
-            Lap0, Lap1 = cpx.get_hodge_laplacian(
-                p_list,
-                tol=1e-12,
-                fmt="csr",
-            )
+            if self.mode == "full":
+                Lap0, Lap1 = cpx.get_hodge_laplacian(
+                    p_list,
+                    tol=1e-12,
+                    fmt="csr",
+                )
+            elif self.mode == "down":
+                Lap0, Lap1 = cpx.get_down_only_laplacians(normalize=False)
+            elif self.mode == "up":
+                Lap0, Lap1 = cpx.get_up_only_laplacians(normalize=False)
+            else:
+                raise ValueError("'mode' should be either 'full', 'up' or 'down'.")
 
         # Helper to compute k eigenvectors and pad when necessary.
         def k_eigs(L):
