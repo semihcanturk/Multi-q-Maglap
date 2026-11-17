@@ -31,6 +31,17 @@ def merge_dicts(d1, d2):
             d1[k] = d2[k]
     return d1
 
+def apply_overrides(config, overrides):
+    # overrides: 'section.key=value' strings (main.py --set), value parsed as YAML
+    for override in overrides:
+        key, value = override.split('=', 1)
+        *parents, leaf = key.split('.')
+        node = config
+        for k in parents:
+            node = node.setdefault(k, {})
+        node[leaf] = yaml.safe_load(value)
+    return config
+
 
 def create_nested_folder(path):
     os.makedirs(path, exist_ok=True)

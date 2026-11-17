@@ -5,7 +5,7 @@ import os
 from torch_geometric.loader import DataLoader
 import torch
 
-from utils import setup_seed, load_config, merge_dicts
+from utils import setup_seed, load_config, merge_dicts, apply_overrides
         
 
 def main():
@@ -18,6 +18,9 @@ def main():
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--train_stage_num', type=int, default=None, choices=[2, 3],
                         help='overrides task.train_stage_num (which stage is in-distribution)')
+    parser.add_argument('--set', dest='overrides', action='append', default=[], metavar='KEY=VALUE',
+                        help='override a config entry, e.g. --set train.lr=0.001 (repeatable); '
+                             'set train.tag too, so the run gets its own train_files folder')
     # these are for raytune
     parser.add_argument('--num_trial', dest = 'num_trial', type = int, default = 100, help = 'number of trials to tune')
     parser.add_argument('--num_cpu', dest = 'num_cpu', type = int, default = 15, help = 'numer of cpu threads')
@@ -30,6 +33,7 @@ def main():
         config = merge_dicts(general_config, pe_config)
     else:
         config = general_config
+    apply_overrides(config, args.overrides)
 
     # possibly overwrite random seed
     if args.seed is not None:

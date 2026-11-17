@@ -191,7 +191,7 @@ class BaseModel(torch.nn.Module):
             else:
                 x = self.conv(x = x, edge_index = edge_index, edge_attr = kwargs.get('edge_attr'))
         elif self.base_model == 'SAT':
-            x = self.conv(x, edge_index, batch, edge_attr = kwargs.get('edge_attr'))
+            x = self.conv(x, edge_index, batch, edge_attr = kwargs.get('edge_attr'), attn_bias = kwargs.get('attn_bias'))
         return x
     
 

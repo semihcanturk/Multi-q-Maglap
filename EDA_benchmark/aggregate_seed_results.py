@@ -17,7 +17,7 @@ import os
 
 import pandas as pd
 
-from utils import load_config, merge_dicts
+from utils import load_config, merge_dicts, apply_overrides
 
 
 def main():
@@ -25,6 +25,8 @@ def main():
     parser.add_argument('--general_config', required=True)
     parser.add_argument('--pe_config', default=None)
     parser.add_argument('--train_stage_num', type=int, default=None, choices=[2, 3])
+    # same --set overrides as main.py (train.tag picks the run's folder)
+    parser.add_argument('--set', dest='overrides', action='append', default=[], metavar='KEY=VALUE')
     args = parser.parse_args()
 
     general_config = load_config('./configs/general/'+str(args.general_config)+'.yaml')
@@ -33,6 +35,7 @@ def main():
         config = merge_dicts(general_config, pe_config)
     else:
         config = general_config
+    apply_overrides(config, args.overrides)
     if args.train_stage_num is not None:
         config['task']['train_stage_num'] = args.train_stage_num
     # only used by the runner to name its own per-seed file; irrelevant here since

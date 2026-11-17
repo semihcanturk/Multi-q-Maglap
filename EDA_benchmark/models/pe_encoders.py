@@ -73,6 +73,9 @@ class PEEmbedder(nn.Module):
         self.q_dim = 1 if self.q_dim is None else self.q_dim
         out_dim = args[args['pe_type'][:3] + '_pe_dim_output']
         self.sign_inv = args['pe_embedder'].get('sign_inv') == 1
+        # spe readout over the graph's N nodes: 'sum' grows with N, 'mean' does not
+        self.pool = args['pe_embedder'].get('pool', 'sum')
+        assert self.pool in ('sum', 'mean')
         if args['pe_embedder']['name'] == 'spe':
             self.encoder_name = 'spe'
         else:
@@ -124,6 +127,8 @@ class PEEmbedder(nn.Module):
                 x_emb = x_emb[mask]
                 x_emb = self.pe_encoder[1](x_emb, edge_index)
                 x_emb = (x_emb * mask[batch].unsqueeze(-1)).sum(1)
+                if self.pool == 'mean':
+                    x_emb = x_emb / mask[batch].sum(1, keepdim=True)
                 #x_emb = self.dropout(x_emb)
                 x_emb = self.pe_projection(x_emb)
                 x_emb = self.act(x_emb)

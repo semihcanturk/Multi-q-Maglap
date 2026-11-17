@@ -56,6 +56,8 @@ class MiddleModel(torch.nn.Module):
         # SAT only: structure-extractor hops and attention heads per layer
         self.k_hop = args.get('k_hop')
         self.num_heads = args.get('num_heads')
+        # SAT only: also feed the node PE to every layer's attention as a per-head bias
+        self.sat_attn_bias = bool(args.get('sat_attn_bias'))
 
 
         # allocate base model convs
@@ -110,14 +112,23 @@ class MiddleModel(torch.nn.Module):
                         self.edge_pe_net = SparseEdgeLinear(pe_dim=pe_dim, out_dim=desired_pe_edge_dim)
                     else:
                         norm = args['pe_embedder'].get('norm') if args.get('pe_embedder') is not None else None
+                        # edge_pe_scale: scale each graph's edge eigenvectors by sqrt(#edges), so the
+                        # kernel values no longer shrink like 1/#edges on larger graphs
                         self.edge_pe_net = SparseEdgeSPE(pe_dim=pe_dim, out_dim=desired_pe_edge_dim,
-                                                          eigval_dim=args['eigval_encoder']['out'], norm=norm)
+                                                          eigval_dim=args['eigval_encoder']['out'], norm=norm,
+                                                          scale_by_num_edges=bool(args.get('edge_pe_scale')))
                 else:
                     self.sparse_pe_net = SparseComplexNetwork(pe_dim, q_dim, self.pe_type, desired_pe_edge_dim,
                                                               network_type=args['pe_encoder'])
                     if self.base_model_name in ['GPS']: # or other transformer based model?
                        self.dense_pe_net = DenseComplexNetwork(pe_dim, q_dim, self.pe_type, 4,
                                                                network_type=args['pe_encoder']) # 4 is # heads of multi-head attention
+                if self.sat_attn_bias:
+                    assert self.base_model_name == 'SAT', 'sat_attn_bias is for model SAT only'
+                    # the SPE gram of the node PE, one channel per head (as root model/sat does
+                    # for sorting networks); spe whatever pe_encoder is, since 'naive' is edge-only
+                    self.dense_pe_net = DenseComplexNetwork(pe_dim, q_dim, self.pe_type, self.num_heads,
+                                                            network_type='spe')
                 #if self.pe_type == 'maglap':
                 #self.complex_handler = ComplexHandler(pe_dim=pe_dim, q_dim=q_dim, pe_type=self.pe_type)
                 #self.eigval_encoder = MLPs(args['eigval_encoder']['in'], args['eigval_encoder']['hidden'],
@@ -201,7 +212,11 @@ class MiddleModel(torch.nn.Module):
                 # move computation of edge_attr/attn_bias to here to get a different edge_attr/attn_bias for each layer
                 x = conv(x, edge_index, batch, edge_attr = edge_attr, attn_bias=attn_bias)
         else:
+            attn_bias = None
+            if self.sat_attn_bias:
+                attn_bias = self.dense_pe_net(z, node_lambda, batch)  # [B, N, N, #heads]
+                attn_bias = attn_bias.permute(0, 3, 1, 2).flatten(0, 1)  # [B*#heads, N(query), N(key)]
             for conv in self.convs:
                 # move computation of edge_attr/attn_bias to here to get a different edge_attr/attn_bias for each layer
-                x = conv(x, edge_index, batch, edge_attr = edge_attr)
+                x = conv(x, edge_index, batch, edge_attr = edge_attr, attn_bias = attn_bias)
         return x

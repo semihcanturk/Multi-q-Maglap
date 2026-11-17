@@ -13,7 +13,7 @@ from torchmetrics.regression import MeanAbsolutePercentageError
 
 from torch_geometric.loader import DataLoader
 import torch.optim as optim
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, LambdaLR
 import torch.nn as nn
 from torch_geometric.utils import to_undirected
 
@@ -36,6 +36,9 @@ class HLSRunner():
         model_tag = str(config['model']['name'])
         if config['model'].get('inner_gnn') is not None:
             model_tag += '_' + str(config['model']['inner_gnn'])
+        # variants of one (target, PE, model) run, e.g. with main.py --set train.tag=mean_warmup
+        if config['train'].get('tag') is not None:
+            model_tag += '_' + str(config['train']['tag'])
         self.train_folder = config['train']['train_files']+str(config['task']['name'])+ '_' +str(config['task']['type'])+'/'+str(config['task']['target'])+'_'+str(config['model'].get('pe_file_name'))+'/'+model_tag+'/'
         # one file per seed (not shared/overwritten across seeds) so a sweep's 5 runs
         # can be aggregated afterwards -- see aggregate_seed_results.py.
@@ -55,6 +58,8 @@ class HLSRunner():
             exception_not_defined('criterion')
         self.mse = nn.MSELoss()
         self.mape = MeanAbsolutePercentageError()
+        # WarmupInvSqrt steps after every batch, StepLR after every epoch
+        self.per_batch_scheduler = config['train']['scheduler']['name'] == 'WarmupInvSqrt'
     def train_ray(self, tune_parameter_config):
         self.init_wandb()
         if tune_parameter_config['criterion'] == 'L1':
@@ -129,7 +134,12 @@ class HLSRunner():
             exception_not_defined('optimizer')
         if self.config['train']['scheduler']['name'] == 'StepLR':
             self.scheduler = StepLR(self.optimizer, step_size=self.config['train']['scheduler']['step_size'], gamma=self.config['train']['scheduler']['gamma'])
-        else: 
+        elif self.config['train']['scheduler']['name'] == 'WarmupInvSqrt':
+            # upstream SAT's schedule: lr rises linearly over `warmup` batches, then decays as
+            # lr * sqrt(warmup / step)
+            warmup = int(self.config['train']['scheduler']['warmup'])
+            self.scheduler = LambdaLR(self.optimizer, lambda s: min((s + 1) / warmup, (warmup / (s + 1)) ** 0.5))
+        else:
             exception_not_defined('scheduler')
         self.device = int(self.config['train']['device'])
         self.model.to('cuda:'+str(self.device) if torch.cuda.is_available() else 'cpu')
@@ -152,7 +162,8 @@ class HLSRunner():
         for epoch_idx in tqdm(range(self.config['train']['epoch'])):
             train_loss, train_r2 = self.train_one_epoch(self.train_loader, 'train', epoch_idx)
             valid_loss, valid_r2 = self.train_one_epoch(self.val_loader, 'valid', epoch_idx)
-            self.scheduler.step()
+            if not self.per_batch_scheduler:
+                self.scheduler.step()
             self.save_model(valid_loss, epoch_idx)
 
     def train_one_epoch(self, data_loader, mode, epoch_idx):
@@ -160,6 +171,7 @@ class HLSRunner():
         total_samples = 0
         pred_list = []
         y_list = []
+        grad_norms = []
         for batch_data in data_loader:
             batch_data.to(self.device)
             edge_index = batch_data.edge_index
@@ -192,14 +204,25 @@ class HLSRunner():
             batch_loss = self.criterion(pred, y.reshape(-1, 1))
             if mode == 'train':
                 batch_loss.backward()
+                # global grad norm, read only: the grads themselves are left untouched
+                grad_norms.append(torch.nn.utils.get_total_norm(
+                    [p.grad for p in self.model.parameters() if p.grad is not None]).item())
                 self.optimizer.step()
+                if self.per_batch_scheduler:
+                    self.scheduler.step()
             epoch_loss = epoch_loss + batch_loss.item() * (torch.max(batch_data.batch).item() + 1)
             total_samples = total_samples + (torch.max(batch_data.batch).item() + 1)
         epoch_loss = epoch_loss / total_samples
         pred_list = np.concatenate(pred_list)
         y_list = np.concatenate(y_list)
         epoch_r2 = r2_score(pred_list, y_list)
-        self.write_log({'loss': epoch_loss, 'r2': epoch_r2}, epoch_idx, mode)
+        log_items = {'loss': epoch_loss, 'r2': epoch_r2}
+        if grad_norms:
+            # global grad norm over the epoch's steps
+            log_items['grad_norm_median'] = float(np.median(grad_norms))
+            log_items['grad_norm_max'] = float(np.max(grad_norms))
+            log_items['lr'] = self.optimizer.param_groups[0]['lr']
+        self.write_log(log_items, epoch_idx, mode)
         return epoch_loss, epoch_r2
      
     def test(self, load_statedict = True, test_num_idx = 0):

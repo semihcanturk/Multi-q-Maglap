@@ -94,13 +94,14 @@ class SATConv(nn.Module):
         self.dropout2 = nn.Dropout(dropout)
         self.norm2 = nn.BatchNorm1d(d_model)
 
-    def forward(self, x, edge_index, batch, edge_attr=None):
-        # queries/keys come from the structure-aware embeddings, values from x itself
+    def forward(self, x, edge_index, batch, edge_attr=None, attn_bias=None):
+        # queries/keys come from the structure-aware embeddings, values from x itself;
+        # attn_bias: optional [B * num_heads, N, N] PE bias added to the attention logits
         x_struct = self.structure_extractor(x, edge_index, edge_attr)
         x_struct, mask = to_dense_batch(x_struct, batch)
         value, _ = to_dense_batch(x, batch)
         # need_weights=True: this MultiheadAttention copy only implements that branch
-        h, _ = self.attn(x_struct, x_struct, value, key_padding_mask=~mask, need_weights=True)
+        h, _ = self.attn(x_struct, x_struct, value, attn_bias=attn_bias, key_padding_mask=~mask, need_weights=True)
         x = self.norm1(x + self.dropout1(h[mask]))
         h = self.linear2(self.dropout(self.activation(self.linear1(x))))
         return self.norm2(x + self.dropout2(h))
