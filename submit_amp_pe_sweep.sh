@@ -16,10 +16,10 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p logs
 
-model_config=gine_10q001
+model_config=bigine_10q001
 device=0
 seeds=(121 122 123 124 125)
-targets=(gain pm)
+targets=(gain bw pm)
 train_stage_nums=(3)
 
 # "job-name-suffix:pe_config path (relative to EDA_benchmark/configs/pe/)"
